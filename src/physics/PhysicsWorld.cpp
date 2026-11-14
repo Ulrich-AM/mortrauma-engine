@@ -22,6 +22,7 @@
 #include <Jolt/Physics/PhysicsSystem.h>
 #include <Jolt/RegisterTypes.h>
 
+#include <cmath>
 #include <cstdarg>
 #include <mutex>
 #include <unordered_map>
@@ -176,6 +177,7 @@ struct JointRecord {
     JointCreateInfo info;
     Ref<SixDOFConstraint> constraint;
     bool grab = false;
+    bool fixture = false;
 };
 
 struct GrabRecord {
@@ -200,6 +202,8 @@ struct PhysicsWorld::Impl {
     std::vector<BodyRecord> bodies;
     std::vector<JointRecord> joints;
     std::vector<GrabRecord> grabs;
+    GrabRecord support;
+    float lastDt = 1.f / 120.f;
 
     BodyInterface& bodiesApi() { return system.GetBodyInterface(); }
 
@@ -415,7 +419,7 @@ int PhysicsWorld::createJoint(const JointCreateInfo& info) {
     record.alive = true;
     record.info = info;
     record.constraint = static_cast<JPH::SixDOFConstraint*>(created.GetPtr());
-    // Motors exist so a later phase can enable them. v0.1 leaves them off.
+    // Created off. MotorController enables the position drive later.
     record.constraint->SetMotorState(JPH::SixDOFConstraintSettings::RotationX, JPH::EMotorState::Off);
     record.constraint->SetMotorState(JPH::SixDOFConstraintSettings::RotationY, JPH::EMotorState::Off);
     record.constraint->SetMotorState(JPH::SixDOFConstraintSettings::RotationZ, JPH::EMotorState::Off);
@@ -451,6 +455,7 @@ bool PhysicsWorld::step(float dt, int collisionSteps) {
     }
     stepping_ = true;
     contacts_.clear();
+    impl_->lastDt = dt;
     const int steps = std::max(1, collisionSteps);
     impl_->system.Update(dt, steps, impl_->temp, impl_->jobs);
     stepping_ = false;
@@ -645,7 +650,13 @@ JointState PhysicsWorld::jointState(int joint) const {
     state.child = record.info.child;
     state.parentName = impl_->bodies[record.info.parent].name;
     state.childName = impl_->bodies[record.info.child].name;
-    state.type = record.grab ? "Grab spring" : (record.info.swing == SwingType::Cone ? "SixDOF cone" : "SixDOF pyramid");
+    if (record.fixture) {
+        state.type = "Laboratory support fixture";
+    } else if (record.grab) {
+        state.type = "Grab spring";
+    } else {
+        state.type = record.info.swing == SwingType::Cone ? "SixDOF cone" : "SixDOF pyramid";
+    }
     state.twistMin = record.constraint->GetLimitsMin(JPH::SixDOFConstraintSettings::RotationX);
     state.twistMax = record.constraint->GetLimitsMax(JPH::SixDOFConstraintSettings::RotationX);
     state.swing1Min = record.constraint->GetLimitsMin(JPH::SixDOFConstraintSettings::RotationY);
@@ -653,10 +664,15 @@ JointState PhysicsWorld::jointState(int joint) const {
     state.swing2Min = record.constraint->GetLimitsMin(JPH::SixDOFConstraintSettings::RotationZ);
     state.swing2Max = record.constraint->GetLimitsMax(JPH::SixDOFConstraintSettings::RotationZ);
     state.angularFriction = record.constraint->GetMaxFriction(JPH::SixDOFConstraintSettings::RotationX);
-    state.motorFrequency = record.info.motorFrequency;
-    state.motorDamping = record.info.motorDamping;
-    state.motorTorqueLimit = record.info.motorTorqueLimit;
-    state.motorEnabled = record.constraint->GetMotorState(JPH::SixDOFConstraintSettings::RotationX) != JPH::EMotorState::Off;
+    const auto& motorSettings = record.constraint->GetMotorSettings(JPH::SixDOFConstraintSettings::RotationX);
+    state.motorFrequency = motorSettings.mSpringSettings.mFrequency;
+    state.motorDamping = motorSettings.mSpringSettings.mDamping;
+    state.motorTorqueLimit = motorSettings.mMaxTorqueLimit;
+    const bool motorX = record.constraint->GetMotorState(JPH::SixDOFConstraintSettings::RotationX) != JPH::EMotorState::Off;
+    const bool motorY = record.constraint->GetMotorState(JPH::SixDOFConstraintSettings::RotationY) != JPH::EMotorState::Off;
+    const bool motorZ = record.constraint->GetMotorState(JPH::SixDOFConstraintSettings::RotationZ) != JPH::EMotorState::Off;
+    state.motorEnabled = motorX || motorY || motorZ;
+    state.motorTarget = toMt(record.constraint->GetTargetOrientationCS());
     state.positionLocked = record.constraint->IsFixedAxis(JPH::SixDOFConstraintSettings::TranslationX) &&
                            record.constraint->IsFixedAxis(JPH::SixDOFConstraintSettings::TranslationY) &&
                            record.constraint->IsFixedAxis(JPH::SixDOFConstraintSettings::TranslationZ);
@@ -674,15 +690,22 @@ JointState PhysicsWorld::jointState(int joint) const {
     state.childBendAxisWorld = cross(state.childTwistAxisWorld, state.childSwingAxisWorld);
 
     const mt::Quat relative = toMt(record.constraint->GetRotationInConstraintSpace());
+    state.constraintRotation = relative;
     const Vec3 twisted = rotate(relative, Vec3{1.f, 0.f, 0.f});
     state.swingAngle = std::acos(clampf(twisted.x, -1.f, 1.f));
-    // XYZ Euler matching Jolt's constraint axes, extracted without wrapping surprises near zero.
-    const float sinX = 2.f * (relative.w * relative.x + relative.y * relative.z);
-    const float cosX = 1.f - 2.f * (relative.x * relative.x + relative.y * relative.y);
-    const float sinY = clampf(2.f * (relative.w * relative.y - relative.z * relative.x), -1.f, 1.f);
-    const float sinZ = 2.f * (relative.w * relative.z + relative.x * relative.y);
-    const float cosZ = 1.f - 2.f * (relative.y * relative.y + relative.z * relative.z);
-    state.rotationRadians = {std::atan2(sinX, cosX), std::asin(sinY), std::atan2(sinZ, cosZ)};
+    state.rotationRadians = constraintEulerRadians(relative);
+    const Vec3 omega = child.angularVelocity - parent.angularVelocity;
+    state.relativeAngularVelocity = {dot(omega, state.twistAxisWorld), dot(omega, state.swingAxisWorld), dot(omega, state.bendAxisWorld)};
+    if (state.motorEnabled) {
+        const JPH::Vec3 lambda = record.constraint->GetTotalLambdaMotorRotation();
+        const float dt = impl_->lastDt > 1e-6f ? impl_->lastDt : settings_.fixedTimestep;
+        state.motorTorque = {lambda.GetX() / dt, lambda.GetY() / dt, lambda.GetZ() / dt};
+        const float limit = std::max(state.motorTorqueLimit, 0.f);
+        if (limit > 0.f) {
+            state.motorSaturated = std::fabs(state.motorTorque.x) >= 0.9f * limit || std::fabs(state.motorTorque.y) >= 0.9f * limit ||
+                                   std::fabs(state.motorTorque.z) >= 0.9f * limit;
+        }
+    }
 
     const float tolerance = 0.08f;
     bool inside = true;
@@ -694,7 +717,7 @@ JointState PhysicsWorld::jointState(int joint) const {
                  state.rotationRadians.z >= state.swing2Min - tolerance && state.rotationRadians.z <= state.swing2Max + tolerance;
     }
     inside = inside && state.rotationRadians.x >= state.twistMin - tolerance && state.rotationRadians.x <= state.twistMax + tolerance;
-    state.withinLimits = inside || record.grab;
+    state.withinLimits = inside || record.grab || record.fixture;
     const float edge = 0.02f;
     state.twistAtLimit = state.rotationRadians.x <= state.twistMin + edge || state.rotationRadians.x >= state.twistMax - edge;
     if (record.info.swing == SwingType::Cone) {
@@ -891,5 +914,140 @@ void PhysicsWorld::clearGrabs() {
         endGrab(i);
     }
 }
+
+bool PhysicsWorld::setAngularMotor(int joint, const AngularMotorCommand& command) {
+    if (!ready_ || joint < 0 || joint >= int(impl_->joints.size()) || !impl_->joints[joint].alive || impl_->joints[joint].constraint == nullptr) {
+        Log::error("Angular motor update rejected for a missing joint.");
+        return false;
+    }
+    if (impl_->joints[joint].grab || impl_->joints[joint].fixture) {
+        Log::error("Angular motor update rejected for a grab or support fixture.");
+        return false;
+    }
+    const bool finiteCommand = finite(command.targetOrientation) && finite(command.targetAngularVelocity) &&
+                               std::isfinite(command.frequencyHz) && std::isfinite(command.dampingRatio) &&
+                               std::isfinite(command.torqueLimit);
+    const float qLen = std::sqrt(dot(command.targetOrientation, command.targetOrientation));
+    if (!finiteCommand || !(qLen > 0.5f)) {
+        Log::error("Angular motor update rejected because '" + impl_->joints[joint].info.name + "' received a non-finite command.");
+        return false;
+    }
+
+    auto* constraint = impl_->joints[joint].constraint.GetPtr();
+    const float frequency = clampf(command.frequencyHz, 0.f, 40.f);
+    const float damping = clampf(command.dampingRatio, 0.f, 2.f);
+    const float torque = clampf(command.torqueLimit, 0.f, 400.f);
+    const bool enable = command.enabled && frequency > 1e-3f && torque > 1e-3f;
+    const mt::Quat target = normalize(command.targetOrientation);
+
+    const JPH::SixDOFConstraintSettings::EAxis axes[3] = {
+        JPH::SixDOFConstraintSettings::RotationX,
+        JPH::SixDOFConstraintSettings::RotationY,
+        JPH::SixDOFConstraintSettings::RotationZ,
+    };
+    for (JPH::SixDOFConstraintSettings::EAxis axis : axes) {
+        auto& motor = constraint->GetMotorSettings(axis);
+        motor.mSpringSettings.mMode = JPH::ESpringMode::FrequencyAndDamping;
+        motor.mSpringSettings.mFrequency = frequency;
+        motor.mSpringSettings.mDamping = damping;
+        motor.SetTorqueLimit(torque);
+    }
+    constraint->SetTargetOrientationCS(toJolt(target));
+    constraint->SetTargetAngularVelocityCS(toV(command.targetAngularVelocity));
+    const JPH::EMotorState motorState = enable ? JPH::EMotorState::Position : JPH::EMotorState::Off;
+    for (JPH::SixDOFConstraintSettings::EAxis axis : axes) {
+        constraint->SetMotorState(axis, motorState);
+    }
+
+    auto& info = impl_->joints[joint].info;
+    info.motorFrequency = frequency;
+    info.motorDamping = damping;
+    info.motorTorqueLimit = torque;
+    if (enable) {
+        impl_->bodiesApi().ActivateBody(impl_->bodies[info.parent].id);
+        impl_->bodiesApi().ActivateBody(impl_->bodies[info.child].id);
+    }
+    return true;
+}
+
+bool PhysicsWorld::beginSupport(int body, float frequency, float damping) {
+    if (!ready_ || body < 0 || body >= int(impl_->bodies.size()) || !impl_->bodies[body].alive) {
+        Log::error("Support fixture rejected for a missing body.");
+        return false;
+    }
+    const BodyState state = bodyState(body);
+    if (!state.isDynamic) {
+        Log::error("Support fixture can only hold a dynamic body.");
+        return false;
+    }
+    endSupport();
+
+    BodyCreateInfo anchor;
+    anchor.name = "Laboratory support fixture";
+    anchor.position = state.position;
+    anchor.shape = BodyCreateInfo::Shape::Sphere;
+    anchor.radius = 0.05f;
+    anchor.mass = 1.f;
+    anchor.isKinematic = true;
+    anchor.collides = false;
+    const int anchorBody = createBody(anchor);
+    if (anchorBody < 0) {
+        return false;
+    }
+
+    JointCreateInfo joint;
+    joint.name = "Laboratory support fixture";
+    joint.parent = anchorBody;
+    joint.child = body;
+    joint.anchorInParent = {};
+    joint.axisXInParent = {1.f, 0.f, 0.f};
+    joint.axisYInParent = {0.f, 1.f, 0.f};
+    joint.anchorInChild = {};
+    joint.axisXInChild = {1.f, 0.f, 0.f};
+    joint.axisYInChild = {0.f, 1.f, 0.f};
+    joint.swing = SwingType::Pyramid;
+    joint.twistMin = -kPi;
+    joint.twistMax = kPi;
+    joint.swing1Min = -kPi;
+    joint.swing1Max = kPi;
+    joint.swing2Min = -kPi;
+    joint.swing2Max = kPi;
+    joint.angularFriction = 0.f;
+    const int jointIndex = createJoint(joint);
+    if (jointIndex < 0) {
+        destroyBody(anchorBody);
+        return false;
+    }
+    auto* constraint = impl_->joints[jointIndex].constraint.GetPtr();
+    const float freq = clampf(frequency, 0.5f, 30.f);
+    const float damp = clampf(damping, 0.f, 2.f);
+    const float slack = 0.002f;
+    for (int axis = 0; axis < 3; ++axis) {
+        JPH::SpringSettings spring(JPH::ESpringMode::FrequencyAndDamping, freq, damp);
+        constraint->SetLimitsSpringSettings(JPH::SixDOFConstraintSettings::EAxis(axis), spring);
+    }
+    constraint->SetTranslationLimits(JPH::Vec3(-slack, -slack, -slack), JPH::Vec3(slack, slack, slack));
+    impl_->joints[jointIndex].fixture = true;
+    impl_->joints[jointIndex].info.name = "Laboratory support fixture";
+    impl_->support.alive = true;
+    impl_->support.body = body;
+    impl_->support.anchorBody = anchorBody;
+    impl_->support.joint = jointIndex;
+    Log::info("Laboratory support fixture enabled. This is not autonomous balance.");
+    return true;
+}
+
+void PhysicsWorld::endSupport() {
+    if (!ready_ || !impl_->support.alive) {
+        return;
+    }
+    destroyJoint(impl_->support.joint);
+    destroyBody(impl_->support.anchorBody);
+    impl_->support = {};
+}
+
+bool PhysicsWorld::supportActive() const { return ready_ && impl_ != nullptr && impl_->support.alive; }
+
+int PhysicsWorld::supportAnchor() const { return supportActive() ? impl_->support.anchorBody : -1; }
 
 }  // namespace mt

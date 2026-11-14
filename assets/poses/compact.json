@@ -1,0 +1,8 @@
+{
+  "name": "Compact",
+  "procedure": "compact",
+  "elbow_degrees": 120,
+  "knee_degrees": 125,
+  "hip_degrees": 100,
+  "description": "Curl the limbs in their own joint frames."
+}

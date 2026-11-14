@@ -1,10 +1,10 @@
 # Roadmap
 
-v0.1.0 ships M0 and M1 only. Later phases should add behavior on top of the existing bodies, joint ids, and motor fields. They should not replace the physics adapter or bake a single character into the simulation loop.
+v0.2.0 ships M0, M1, and M2. Later phases should add behavior on top of the existing bodies, joint ids, and `MotorController`. They should not replace the physics adapter, write Jolt motor targets themselves, or bake a single character into the simulation loop.
 
 ## M2 — Active joint motors
 
-Turn on the torque-limited motors that v0.1.0 already stores (frequency, damping, torque limit) without changing joint identities. Targets are explicit controller setpoints, not an implicit return to the bind pose.
+Implemented in v0.2.0. Torque-limited angular position motors drive constraint-space targets. Muscle groups and per-joint overrides select which joints are armed. `MotorController::apply` is the single command path. The character stays fully dynamic: motors can fail, saturate, and be turned off. There is no balance controller. See `docs/MOTOR_SYSTEM.md` and `docs/M2_TESTING.md`.
 
 ## M3 — Autonomous standing
 
@@ -38,4 +38,4 @@ A look target driving `head` and `neck` only. No new physical bodies. `HeadF` st
 
 A single owner of motor setpoints so standing, stepping, falling, grabbing, and injury do not write the same joint in the same step. The physics world remains unaware of behaviors. It only applies the motors and integrates.
 
-v0.1.0 does not implement any of M2–M10.
+v0.2.0 does not implement M3–M10. M2's motor controller is the setpoint owner those phases should share.

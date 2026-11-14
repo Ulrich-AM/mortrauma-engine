@@ -1,0 +1,5 @@
+{
+  "name": "Neutral",
+  "procedure": "neutral",
+  "description": "Constraint orientation of the imported Humanoidguy pose."
+}

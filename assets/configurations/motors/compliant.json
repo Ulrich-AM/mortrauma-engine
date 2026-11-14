@@ -1,0 +1,12 @@
+{
+  "name": "compliant",
+  "frequency_hz": 1.2,
+  "damping_ratio": 1.0,
+  "torque_nm": {
+    "spine_stomach": 13.75, "spine_chest": 12.5, "spine_neck": 8.0, "neck": 3.0,
+    "clavicle_1": 4.0, "clavicle_2": 4.0, "shoulder_1": 6.5, "shoulder_2": 6.5,
+    "elbow_1": 4.5, "elbow_2": 4.5, "wrist_1": 1.5, "wrist_2": 1.5,
+    "hip_root_1": 4.5, "hip_root_2": 4.5, "hip_1": 12.5, "hip_2": 12.5,
+    "knee_1": 8.75, "knee_2": 8.75, "ankle_1": 3.0, "ankle_2": 3.0
+  }
+}

@@ -1,0 +1,182 @@
+{
+  "description": "One retargeted Mixamo frame. Bone directions were converted into Humanoidguy constraint frames.",
+  "driven": [
+    "elbow_1",
+    "elbow_2",
+    "knee_1",
+    "knee_2",
+    "shoulder_1",
+    "shoulder_2",
+    "hip_1",
+    "hip_2"
+  ],
+  "joints": {
+    "ankle_1": {
+      "mapped": false,
+      "w": -1.0,
+      "x": 2.9802318834981634e-08,
+      "y": -4.470348002882929e-08,
+      "z": -2.9802318834981634e-08
+    },
+    "ankle_2": {
+      "mapped": false,
+      "w": -1.0,
+      "x": -5.960464477539063e-08,
+      "y": 5.960464477539063e-08,
+      "z": -5.960464477539063e-08
+    },
+    "clavicle_1": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 3.7252898543727042e-09,
+      "z": 0.0
+    },
+    "clavicle_2": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 1.4901161193847656e-08,
+      "y": 0.0,
+      "z": -2.7939677238464355e-09
+    },
+    "elbow_1": {
+      "mapped": true,
+      "w": 0.9982944130897522,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.05838075652718544
+    },
+    "elbow_2": {
+      "mapped": true,
+      "w": 0.9999188780784607,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.012736327014863491
+    },
+    "hip_1": {
+      "mapped": true,
+      "w": 0.9998307228088379,
+      "x": 0.0,
+      "y": 0.000559547683224082,
+      "z": -0.01839102990925312
+    },
+    "hip_2": {
+      "mapped": true,
+      "w": 0.9931955337524414,
+      "x": 0.0,
+      "y": 0.06046918034553528,
+      "z": -0.09952938556671143
+    },
+    "hip_root_1": {
+      "mapped": false,
+      "w": 1.0,
+      "x": -1.862645149230957e-09,
+      "y": 5.587935447692871e-09,
+      "z": 8.940696716308594e-08
+    },
+    "hip_root_2": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 1.8626449271863521e-09,
+      "y": 3.7252898543727042e-09,
+      "z": -1.123407677994237e-08
+    },
+    "knee_1": {
+      "mapped": true,
+      "w": 0.9969488978385925,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.07805725932121277
+    },
+    "knee_2": {
+      "mapped": true,
+      "w": 0.9906556010246277,
+      "x": 0.0,
+      "y": 0.0,
+      "z": 0.13638745248317719
+    },
+    "neck": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 0.0,
+      "y": 1.4901161193847656e-08,
+      "z": 2.9802322387695313e-08
+    },
+    "shoulder_1": {
+      "mapped": true,
+      "w": 0.9219338297843933,
+      "x": 0.0,
+      "y": -0.06469044089317322,
+      "z": -0.3819073438644409
+    },
+    "shoulder_2": {
+      "mapped": true,
+      "w": 0.9260362386703491,
+      "x": 0.0,
+      "y": 0.03752382472157478,
+      "z": -0.3755648136138916
+    },
+    "spine_chest": {
+      "mapped": false,
+      "w": 1.0,
+      "x": -4.470348358154297e-08,
+      "y": 1.4901161193847656e-08,
+      "z": 1.4901161193847656e-08
+    },
+    "spine_neck": {
+      "mapped": false,
+      "w": 1.0,
+      "x": -1.4901161193847656e-08,
+      "y": 1.4901161193847656e-08,
+      "z": -2.9802322387695313e-08
+    },
+    "spine_stomach": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 5.960464477539063e-08,
+      "y": 0.0,
+      "z": 0.0
+    },
+    "wrist_1": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 7.450580596923828e-08,
+      "y": 1.4901161193847656e-08,
+      "z": 5.960464477539063e-08
+    },
+    "wrist_2": {
+      "mapped": false,
+      "w": 1.0,
+      "x": 1.4901159417490817e-08,
+      "y": -1.4901159417490817e-08,
+      "z": 2.2351740014414645e-08
+    }
+  },
+  "name": "Mixamo Idle",
+  "notes": [
+    "Source is an animation. The reference frame is the first key of each channel, not a played timeline.",
+    "Humanoidguy side 1 is +X, the character's right when facing -Z. Mixamo Right maps to side 1 and Mixamo Left to side 2.",
+    "Mixamo local rotations were not copied. Elbow and knee targets are flexion angles about constraint Z.",
+    "Source positions were larger than 20 and were scaled by 0.01 before measuring directions.",
+    "elbow_1 flexion 6.693748 deg from bone directions.",
+    "elbow_2 flexion 1.459515 deg from bone directions.",
+    "knee_1 flexion 8.953811 deg from bone directions.",
+    "knee_2 flexion 15.677713 deg from bone directions.",
+    "Unmapped joints keep the Humanoidguy reference orientation. No mapping was invented for them."
+  ],
+  "procedure": "mixamo_idle",
+  "unmapped": [
+    "spine_stomach",
+    "spine_chest",
+    "spine_neck",
+    "neck",
+    "clavicle_1",
+    "clavicle_2",
+    "wrist_1",
+    "wrist_2",
+    "hip_root_1",
+    "hip_root_2",
+    "ankle_1",
+    "ankle_2"
+  ]
+}

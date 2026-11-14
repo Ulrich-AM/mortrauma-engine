@@ -1,11 +1,13 @@
 # Architecture
 
-MORTRAUMA v0.1.0 keeps the simulation independent of the user interface.
+MORTRAUMA keeps the simulation independent of the user interface. v0.2.0 adds motor and pose modules to the engine. Dear ImGui edits settings and submits commands. It does not integrate physics or compute motor torques.
 
 ```text
 Application (GLFW, Dear ImGui)
     |  uses
     +-- Renderer (OpenGL 3.3, no physics types beyond math)
+    +-- MotorController  -- the only writer of angular motor commands
+    +-- PoseController   -- interpolates constraint-space targets
     +-- Ragdoll builder
             |  uses
             +-- PhysicsWorld   Jolt adapter
@@ -13,7 +15,7 @@ Application (GLFW, Dear ImGui)
             +-- Character JSON
 ```
 
-`mortrauma_engine` contains core, physics, assets, and rig. It does not include Dear ImGui headers. Button handling lives in `src/app/Application.cpp` and calls the engine. Nothing in the physics step is wired to a particular key code or to one hardcoded mesh.
+`mortrauma_engine` contains core, physics, assets, rig, motors, and poses. It does not include Dear ImGui headers. Button handling lives in `src/app/Application.cpp` and calls the engine. Nothing in the physics step is wired to a particular key code or to one hardcoded mesh.
 
 ## Physics adapter
 
@@ -25,8 +27,8 @@ Joints are Jolt `SixDOFConstraint`s:
 
 - Translation X/Y/Z are fixed. A limb cannot separate from its parent by stretching a soft positional spring.
 - Angular motion is a cone or a pyramid of limits. Elbows, knees and hips use an anatomical neutral, so the imported crouch is not zero. Other joints still coincide at the imported pose.
-- Angular friction torque is the passive resistance. Presets scale it.
-- Motor settings (frequency, damping, torque limit) are stored on the constraint and left **off**. A later phase can enable torque-limited motors without changing the joint identity.
+- Angular friction torque is the passive resistance. Presets scale it. It stays in effect when motors are off and is not a motor parameter.
+- Angular motors are position drives in constraint space. `MotorController::apply` is the only code that enables them and writes their targets. See `docs/MOTOR_SYSTEM.md`.
 
 Jolt 5.3 does not support soft angular limits. Compliance is friction plus body damping, not a pose spring. That is deliberate: a motor targeted at the bind pose would be a hidden muscle.
 

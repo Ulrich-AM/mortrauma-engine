@@ -1,0 +1,6 @@
+{
+  "name": "Leg Flexion",
+  "procedure": "leg_flexion",
+  "flex_degrees": 120,
+  "description": "Knee flexion about constraint Z, clamped to the anatomical hinge."
+}

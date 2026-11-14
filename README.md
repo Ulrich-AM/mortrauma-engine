@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.1.1 is a native C++ laboratory for passive, physically simulated humanoid reactions. v0.1.1 corrects elbow, knee and hip limits so they are measured from anatomical extension instead of the imported crouch. This release is the application foundation (M0) and a fully dynamic ragdoll (M1). It does not balance, walk, or react intelligently. The body is a connected articulated rigid-body system: it falls, collides, tumbles, and settles.
+MORTRAUMA v0.2.0 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 adds torque-limited angular motors so the character can attempt joint-relative poses, resist a push, and relax. It does not balance, walk, grab on its own, or play animation. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 
@@ -11,13 +11,16 @@ include/mortrauma/    public headers (no Dear ImGui in the engine)
 src/core/             log, paths, math
 src/physics/          Jolt adapter
 src/rig/              character configuration and ragdoll builder
+src/motors/           torque-limited angular motor controller
+src/poses/            procedural poses and optional Mixamo retarget
 src/assets/           Assimp import
 src/renderer/         OpenGL viewport
 src/app/              GLFW window, docking UI, tools
 assets/characters/    humanoidguy_rigged.fbx
-assets/configurations character and joint presets
+assets/configurations character, joint presets, and motor profiles
+assets/poses/         procedural pose parameters and an optional Mixamo reference
 assets/environments/  test-lab description
-tests/                CTest programs RIG-001..003 and PHY-001..006
+tests/                CTest programs RIG, PHY, LIM, and MOT
 ```
 
 The engine target `mortrauma_engine` does not link Dear ImGui or OpenGL. The executable does.
@@ -62,7 +65,9 @@ Assets are resolved from the executable directory first (`assets/` next to the e
 
 ## Using the laboratory
 
-The simulation starts paused on the imported bind pose so the rig can be inspected. Press **Play** (or Space) to let it fall. **Step** advances one fixed 1/120 s update. **Reset** (or R) restores poses and clears velocities and grab constraints.
+The simulation starts paused on the imported bind pose so the rig can be inspected. Press **Play** (or Space) to let it fall. **Step** advances one fixed 1/120 s update. **Reset** (or R) restores poses, clears velocities and grab constraints, removes the laboratory support fixture, and switches motors off.
+
+The **Motor Laboratory** selects Passive, Compliant, Active, or Hold Current Pose, edits muscle groups and individual joints, and transitions to procedural or imported poses. Movement comes from the joint motors. Resetting or choosing Passive returns the passive ragdoll. The pelvis support button is a laboratory fixture, not balance.
 
 - Right drag orbits, middle drag pans, the wheel zooms.
 - **Select** picks a rigid body.
@@ -82,5 +87,9 @@ See `docs/RIG_SPECIFICATION.md` for the bone-to-body mapping.
 - `docs/ARCHITECTURE.md`
 - `docs/RIG_SPECIFICATION.md`
 - `docs/PHYSICS_CONFIGURATION.md`
+- `docs/MOTOR_SYSTEM.md`
+- `docs/MOTOR_TUNING.md`
+- `docs/POSE_SYSTEM.md`
 - `docs/TESTING.md`
+- `docs/M2_TESTING.md`
 - `docs/ROADMAP.md`

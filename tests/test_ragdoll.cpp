@@ -9,8 +9,6 @@
 #include <string>
 #include <vector>
 
-namespace {
-
 int gFailures = 0;
 
 void expect(bool condition, const std::string& message) {
@@ -21,6 +19,8 @@ void expect(bool condition, const std::string& message) {
         std::cout << "ok: " << message << '\n';
     }
 }
+
+namespace {
 
 struct Lab {
     mt::PhysicsWorld world;
@@ -566,8 +566,16 @@ void testPhy006(Lab& lab) {
 
 }  // namespace
 
+void runMotorTest(const std::string& which);
+void runAllMotorTests();
+
 int main(int argc, char** argv) {
     const std::string which = argc > 1 ? argv[1] : "ALL";
+    if (which.rfind("MOT-", 0) == 0) {
+        runMotorTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
     if (which == "DUMP") {
         const auto model = mt::ModelLoader::load(mt::findAsset("characters/humanoidguy_rigged.fbx").string());
         if (!model.report.ok) {
@@ -656,6 +664,9 @@ int main(int argc, char** argv) {
     if (which == "LIM-001" || which == "ALL") {
         mt::resetRagdoll(lab.world, lab.ragdoll);
         testLim001(lab);
+    }
+    if (which == "ALL") {
+        runAllMotorTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
         which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&
