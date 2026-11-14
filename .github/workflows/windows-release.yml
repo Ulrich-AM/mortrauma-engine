@@ -26,9 +26,11 @@ jobs:
           Write-Host "MSVC at $install"
           $vcvars = Join-Path $install "VC\Auxiliary\Build\vcvars64.bat"
           $ninjaDir = Split-Path (Get-Command ninja -ErrorAction Stop).Source
-          # windows-latest no longer exposes the VS 2022 generator to a stock CMake
-          # invocation. Load the newest installed toolset explicitly and build Release with Ninja.
-          cmd /c "`"$vcvars`" && set `"PATH=$ninjaDir;%PATH%`" && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build build --parallel && ctest --test-dir build --output-on-failure"
+          # Inherit Ninja, then let vcvars prepend cl. Do not assign PATH inside cmd:
+          # %PATH% expands before vcvars runs and drops the MSVC tools, so CMake
+          # would pick MinGW instead.
+          $env:PATH = "$ninjaDir;$env:PATH"
+          cmd /c "`"$vcvars`" && cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl && cmake --build build --parallel && ctest --test-dir build --output-on-failure"
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Package

@@ -7,6 +7,7 @@
 #include <GLFW/glfw3.h>
 
 #include <cmath>
+#include <cstddef>
 #include <vector>
 
 namespace mt {
@@ -43,15 +44,18 @@ namespace {
 #define GL_FRONT_AND_BACK 0x0408
 #endif
 
+// The Windows SDK gl.h is OpenGL 1.1 and does not define these names.
+using GlSizeiptr = std::ptrdiff_t;
+
 using GlGen = void (*)(GLsizei, GLuint*);
 using GlBind = void (*)(GLenum, GLuint);
 using GlBindVertexArrayFn = void (*)(GLuint);
-using GlBufferDataFn = void (*)(GLenum, GLsizeiptr, const void*, GLenum);
+using GlBufferDataFn = void (*)(GLenum, GlSizeiptr, const void*, GLenum);
 using GlAttrib = void (*)(GLuint, GLint, GLenum, GLboolean, GLsizei, const void*);
 using GlEnableAttrib = void (*)(GLuint);
-using GlShaderSourceFn = void (*)(GLuint, GLsizei, const GLchar* const*, const GLint*);
+using GlShaderSourceFn = void (*)(GLuint, GLsizei, const char* const*, const GLint*);
 using GlGetiv = void (*)(GLuint, GLenum, GLint*);
-using GlGetInfo = void (*)(GLuint, GLsizei, GLsizei*, GLchar*);
+using GlGetInfo = void (*)(GLuint, GLsizei, GLsizei*, char*);
 using GlUniformMat = void (*)(GLint, GLsizei, GLboolean, const GLfloat*);
 using GlUniform3 = void (*)(GLint, GLfloat, GLfloat, GLfloat);
 using GlUniform1iFn = void (*)(GLint, GLint);
@@ -93,7 +97,7 @@ using GlDeleteShaderFn = void (*)(GLuint);
 GlDeleteShaderFn glDeleteShader_ = nullptr;
 using GlUseFn = void (*)(GLuint);
 GlUseFn glUseProgram_ = nullptr;
-using GlGetUniformFn = GLint (*)(GLuint, const GLchar*);
+using GlGetUniformFn = GLint (*)(GLuint, const char*);
 GlGetUniformFn glGetUniformLocation_ = nullptr;
 GlUniformMat glUniformMatrix4fv_ = nullptr;
 GlUniform3 glUniform3f_ = nullptr;
@@ -410,9 +414,9 @@ int Renderer::createMesh(const std::vector<SkinnedVertex>& vertices, const std::
     glGenBuffers_(1, &mesh.ebo);
     glBindVertexArray_(mesh.vao);
     glBindBuffer_(GL_ARRAY_BUFFER, mesh.vbo);
-    glBufferData_(GL_ARRAY_BUFFER, GLsizeiptr(packed.size() * sizeof(float)), packed.data(), GL_STATIC_DRAW);
+    glBufferData_(GL_ARRAY_BUFFER, GlSizeiptr(packed.size() * sizeof(float)), packed.data(), GL_STATIC_DRAW);
     glBindBuffer_(GL_ELEMENT_ARRAY_BUFFER, mesh.ebo);
-    glBufferData_(GL_ELEMENT_ARRAY_BUFFER, GLsizeiptr(indices.size() * sizeof(uint32_t)), indices.data(), GL_STATIC_DRAW);
+    glBufferData_(GL_ELEMENT_ARRAY_BUFFER, GlSizeiptr(indices.size() * sizeof(uint32_t)), indices.data(), GL_STATIC_DRAW);
     glEnableVertexAttribArray_(0);
     glVertexAttribPointer_(0, 3, GL_FLOAT, GL_FALSE, sizeof(float) * 6, nullptr);
     glEnableVertexAttribArray_(1);
@@ -518,7 +522,7 @@ void Renderer::flushLines() {
             return;
         }
         glUniform3f_(lineColorLoc_, color.x, color.y, color.z);
-        glBufferData_(GL_ARRAY_BUFFER, GLsizeiptr(positions.size() * sizeof(float)), positions.data(), GL_DYNAMIC_DRAW);
+        glBufferData_(GL_ARRAY_BUFFER, GlSizeiptr(positions.size() * sizeof(float)), positions.data(), GL_DYNAMIC_DRAW);
         glDrawArrays_(GL_LINES, 0, GLsizei(positions.size() / 3));
         positions.clear();
     };
