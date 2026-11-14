@@ -14,7 +14,7 @@ The Joint inspector shows twist, both swings, the limits, the anatomical offset 
 
 Linux Release: the v0.1.0 suite plus RIG-004, RIG-005, RIG-006 and LIM-001 passed. Measured angles are in `docs/JOINT_LIMITS.md`. A zero-friction drive reached the 0° extension stop on both elbows and both knees (about −0.2° of solver slop) with pivots under 1 mm apart. The same drive with 2 N·m of friction reached 8.7° at the elbows and about 2° at the knees. Contacts were present and were not what stopped the limb: the joint was on its extension limit.
 
-The Windows result is the tag workflow for this release. This note does not claim that run until the workflow is green.
+Windows Release, MSVC 19.51, GitHub Actions run [43541736222](https://github.com/Ulrich-AM/mortrauma-engine/actions/runs/43541736222) on `089e350`: all 13 tests passed and `MORTRAUMA-v0.1.1-Windows-x64.zip` was uploaded. The tag workflow rebuilds the release commit before publishing.
 
 ## Known limitations
 
