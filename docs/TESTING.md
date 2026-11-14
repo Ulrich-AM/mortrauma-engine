@@ -1,6 +1,6 @@
 # Testing
 
-Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. RIG, PHY, MOT, GRAB, FOOT, BAL, EQ, and STAB load `humanoidguy_rigged.fbx`. A missing Humanoidguy asset fails those tests. The procedural stand-in is not accepted as a pass. `mortrauma_tests DUMP` prints bind positions and is not part of CTest. `mortrauma_tests STAB-LOG` prints the standing trial and is not part of CTest.
+Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. RIG, PHY, MOT, GRAB, FOOT, BAL, EQ, STAB, ALIGN, and STEP load `humanoidguy_rigged.fbx`. A missing Humanoidguy asset fails those tests. The procedural stand-in is not accepted as a pass. `mortrauma_tests DUMP` prints bind positions and is not part of CTest. `mortrauma_tests STAB-LOG` prints the standing trial and is not part of CTest.
 
 v0.2.0 adds MOT-001 through MOT-012. The motor numbers are in `docs/M2_TESTING.md`. v0.3.0 adds GRAB-001 through GRAB-007 and BAL-001 through BAL-014. The standing numbers and the cases that are expected to fall are in `docs/BALANCE_TESTING.md`. The table below is the original v0.1.0 record.
 

@@ -14,7 +14,7 @@ v0.3.1 (M3.1) replaces the foot capsules with a flat sole box and levels that so
 
 v0.3.2 (M3.2) moves the standing reference from the heel blend onto the ankles. The same torque limits then hold a 30 s quiet stand. The torso still sways by about 10°, the unloaded feet differ by about 12 mm, and contact impulses are not measured. See `docs/EQUILIBRIUM_ANALYSIS.md`.
 
-v0.3.3 added a second selectable rig. v0.3.4 (M3.4 and M3.5) removes it. Humanoidguy is the only loaded character. The foot boxes match the visible meshes and Jolt's bounds. The Normal quiet stand still lasts 30 s, with the ankles saturating and a 6 N·s backward push still able to topple the body. Recovery stepping stays in M4. See `docs/STANDING_STABILIZATION.md`.
+v0.3.4 removed the second character and remeasured the 30 s stand. v0.4.0 (M4) turns the foot boxes onto the visible sole, about 33° off the old bone-perpendicular face, and keeps the 30 s quiet stand. Weight transfer, a foot lift, and one recovery step are in the Stepping Laboratory. The lift does not yet hold a raised foot, and a recovery step is not reliable. See `docs/FOOT_ALIGNMENT.md` and `docs/M4_EXPERIMENTS.md`.
 
 ## M4 — Momentum and recovery stepping
 

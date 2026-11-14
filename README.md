@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.3.4 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand. v0.3.1 gives the feet a flat sole collider fitted to the visible mesh. v0.3.2 places the center of mass over the ankles so the 12 N·m ankle motors can hold a quiet stand. v0.3.3 tried a second character and v0.3.4 removes that experiment. Humanoidguy is the only character the application loads. The quiet stand on the Normal preset still reaches 30 s. A hard push can still knock him down. He does not walk, step, get up, or grab on his own. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch. The standing measurements are in `docs/STANDING_STABILIZATION.md`.
+MORTRAUMA v0.4.0 is a native C++ laboratory for physically simulated humanoid reactions. The body is a fully dynamic ragdoll. Humanoidguy is the only character. v0.3.2 placed the center of mass over the ankles. v0.3.4 removed the Y-Bot experiment and remeasured a 30 s quiet stand. v0.4.0 turns the foot boxes onto the visible sole. That sole was about 33° off the old bone-perpendicular face. The quiet stand still reaches 30 s. The Stepping Laboratory can attempt one weight shift, one foot lift, or one recovery step. Those attempts are experimental: a lift currently topples the character, and a hard push still knocks him down. He does not walk. v0.1.1's anatomical joint frames are unchanged. See `docs/FOOT_ALIGNMENT.md` and `docs/RECOVERY_STEPPING.md`.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 
@@ -21,7 +21,7 @@ assets/characters/    humanoidguy_rigged.fbx
 assets/configurations character rig, joint presets, and motor profiles
 assets/poses/         procedural pose parameters and an optional Mixamo reference
 assets/environments/  test-lab and standing-scene descriptions
-tests/                CTest programs RIG, PHY, LIM, MOT, GRAB, BAL, FOOT, EQ, and STAB
+tests/                CTest programs RIG, PHY, LIM, MOT, GRAB, BAL, FOOT, EQ, STAB, ALIGN, and STEP
 ```
 
 The engine target `mortrauma_engine` does not link Dear ImGui or OpenGL. The executable does.

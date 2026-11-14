@@ -85,3 +85,9 @@ The live balance target is still the ankle projection (`equilibriumReference`, l
 Before the first contact the ankle-moment estimate is 0. It used to treat the horizontal distance from the pelvis to an ankle as a single-foot moment and reported about 196 N·m, which no joint was carrying. Once both feet are down, the estimate is half the weight times the forward arm. On the 30 s trial that is about 5 to 6 N·m, under the 12 N·m cap. The cap was not raised.
 
 While Standing or Recovering, a saturated ankle or hip replaces the "within capacity" line with that fact. The pitch moment can be inside 12 N·m and the twist axis can still sit on the cap. Details and the trial that was reverted are in `docs/STANDING_STABILIZATION.md` and `docs/STANDING_EXPERIMENTS.md`.
+
+## v0.4.0 sole and a first step
+
+The foot box sole is the visible underside, not the face perpendicular to the foot bone. That bone face was 33° off on the right foot and 31° on the left. After the correction the standing pose still levels the sole inside the ankle limits, and the Normal quiet stand is still upright at 30 s (center of mass 1.028 m, tilt 0.093 rad, drift 27 mm). Torque limits and friction are unchanged.
+
+`StepController` is a second mode, off unless the Stepping Laboratory asks for it. It moves the balance reference toward one foot and, for a lift or a step, replaces the swing hip and knee corrections. It does not pin either foot. A weight shift toward the left foot moved the center of mass about 48 mm that way and stayed up. The same request toward the right foot did not. A foot lift gained about 5 mm of sole height while the body was still upright, then the character fell. A 55 N·s push still falls. See `docs/M4_EXPERIMENTS.md`.
