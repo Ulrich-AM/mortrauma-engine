@@ -394,7 +394,14 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         record.extensionAxis = parentFrame.x;
         record.flexionDirection = parentFrame.y;
         record.flexionAxis = parentFrame.z;
+        record.anchorInParent = info.anchorInParent;
+        record.anchorInChild = info.anchorInChild;
+        record.axisXInParent = info.axisXInParent;
+        record.axisYInParent = info.axisYInParent;
+        record.axisXInChild = info.axisXInChild;
+        record.axisYInChild = info.axisYInChild;
         record.neutralOffset = world.jointState(joint).rotationRadians;
+        record.bindConstraint = world.jointState(joint).constraintRotation;
         ragdoll.joints.push_back(record);
         if (spec.orient != BendOrient::None) {
             Log::info(spec.id + " anatomical offset twist/swing1/swing2 deg " +

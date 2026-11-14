@@ -568,11 +568,25 @@ void testPhy006(Lab& lab) {
 
 void runMotorTest(const std::string& which);
 void runAllMotorTests();
+void runGrabTest(const std::string& which);
+void runAllGrabTests();
+void runBalanceTest(const std::string& which);
+void runAllBalanceTests();
 
 int main(int argc, char** argv) {
     const std::string which = argc > 1 ? argv[1] : "ALL";
     if (which.rfind("MOT-", 0) == 0) {
         runMotorTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which.rfind("GRAB-", 0) == 0) {
+        runGrabTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which.rfind("BAL-", 0) == 0) {
+        runBalanceTest(which);
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
@@ -667,6 +681,8 @@ int main(int argc, char** argv) {
     }
     if (which == "ALL") {
         runAllMotorTests();
+        runAllGrabTests();
+        runAllBalanceTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
         which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&

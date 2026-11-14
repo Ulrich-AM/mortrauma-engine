@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(MORTRAUMA VERSION 0.2.0 LANGUAGES CXX)
+project(MORTRAUMA VERSION 0.3.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -118,7 +118,12 @@ add_library(mortrauma_engine STATIC
     src/motors/MotorController.cpp
     src/motors/PoseController.cpp
     src/poses/PoseLibrary.cpp
-    src/poses/PoseImporter.cpp)
+    src/poses/PoseImporter.cpp
+    src/balance/BalanceConfig.cpp
+    src/balance/SupportContacts.cpp
+    src/balance/BalanceEstimator.cpp
+    src/balance/StandingPose.cpp
+    src/balance/BalanceController.cpp)
 target_include_directories(mortrauma_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(mortrauma_engine PUBLIC Jolt nlohmann_json::nlohmann_json assimp)
 target_compile_definitions(mortrauma_engine PUBLIC MORTRAUMA_SOURCE_DIR="${MORTRAUMA_SOURCE_DIR_FWD}")
@@ -136,7 +141,7 @@ add_executable(MORTRAUMA
     src/renderer/Renderer.cpp
     src/app/Application.cpp)
 target_link_libraries(MORTRAUMA PRIVATE mortrauma_engine glfw imgui OpenGL::GL)
-target_compile_definitions(MORTRAUMA PRIVATE MORTRAUMA_VERSION="0.2.0")
+target_compile_definitions(MORTRAUMA PRIVATE MORTRAUMA_VERSION="0.3.0")
 if(MSVC)
     target_compile_options(MORTRAUMA PRIVATE /W4 /EHsc)
     set_property(TARGET MORTRAUMA PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
@@ -148,14 +153,14 @@ endif()
 # --- tests ---------------------------------------------------------------------------
 include(CTest)
 if(BUILD_TESTING)
-    add_executable(mortrauma_tests tests/test_ragdoll.cpp tests/test_motors.cpp)
+    add_executable(mortrauma_tests tests/test_ragdoll.cpp tests/test_motors.cpp tests/test_grab.cpp tests/test_balance.cpp)
     target_link_libraries(mortrauma_tests PRIVATE mortrauma_engine)
     if(MSVC)
         target_compile_options(mortrauma_tests PRIVATE /W4 /EHsc)
     else()
         target_compile_options(mortrauma_tests PRIVATE -Wall -Wextra -Wno-unused-parameter)
     endif()
-    foreach(test_name RIG-001 RIG-002 RIG-003 RIG-004 RIG-005 RIG-006 PHY-001 PHY-002 PHY-003 PHY-004 PHY-005 PHY-006 LIM-001 MOT-001 MOT-002 MOT-003 MOT-004 MOT-005 MOT-006 MOT-007 MOT-008 MOT-009 MOT-010 MOT-011 MOT-012)
+    foreach(test_name RIG-001 RIG-002 RIG-003 RIG-004 RIG-005 RIG-006 PHY-001 PHY-002 PHY-003 PHY-004 PHY-005 PHY-006 LIM-001 MOT-001 MOT-002 MOT-003 MOT-004 MOT-005 MOT-006 MOT-007 MOT-008 MOT-009 MOT-010 MOT-011 MOT-012 GRAB-001 GRAB-002 GRAB-003 GRAB-004 GRAB-005 GRAB-006 GRAB-007 BAL-001 BAL-002 BAL-003 BAL-004 BAL-005 BAL-006 BAL-007 BAL-008 BAL-009 BAL-010 BAL-011 BAL-012 BAL-013 BAL-014)
         add_test(NAME ${test_name} COMMAND mortrauma_tests ${test_name})
         set_tests_properties(${test_name} PROPERTIES TIMEOUT 180)
     endforeach()

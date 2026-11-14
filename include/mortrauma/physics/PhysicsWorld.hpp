@@ -34,6 +34,9 @@ struct BodyCreateInfo {
     bool isStatic = false;
     bool isKinematic = false;
     bool collides = true;
+    // Kinematic grab anchors must not sleep. A sleeping body that is still
+    // attached to a constraint is not a valid island member.
+    bool allowSleeping = true;
     int collisionSubGroup = -1;  // >= 0 joins the ragdoll filter group
 };
 
@@ -242,6 +245,8 @@ public:
     void updateGrab(int grab, Vec3 targetWorld);
     void endGrab(int grab);
     void clearGrabs();
+    bool grabAlive(int grab) const;
+    int grabAnchor(int grab) const;
 
     // Laboratory fixture. A kinematic anchor holds the body with a soft
     // positional spring and leaves rotation free. It is not a balance

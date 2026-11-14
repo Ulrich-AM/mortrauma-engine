@@ -1,6 +1,6 @@
 # Roadmap
 
-v0.2.0 ships M0, M1, and M2. Later phases should add behavior on top of the existing bodies, joint ids, and `MotorController`. They should not replace the physics adapter, write Jolt motor targets themselves, or bake a single character into the simulation loop.
+v0.3.0 ships M0, M1, M2, and a first standing controller (M3). Later phases should add behavior on top of the existing bodies, joint ids, and `MotorController`. They should not replace the physics adapter, write Jolt motor targets themselves, or bake a single character into the simulation loop.
 
 ## M2 — Active joint motors
 
@@ -8,7 +8,7 @@ Implemented in v0.2.0. Torque-limited angular position motors drive constraint-s
 
 ## M3 — Autonomous standing
 
-A balance controller that holds the center of mass over the support polygon using the hip, spine, and ankle motors. The ragdoll stays fully dynamic. Failure falls through the passive joints instead of being projected upright.
+Implemented in v0.3.0 for one Humanoidguy. The controller reads a mass-weighted center of mass, real foot contacts, and a support hull, then submits ankle, hip, and torso targets through `MotorController::apply`. The ragdoll stays dynamic. There is no step and no get-up. On capsule feet the quiet stand holds for about a second and then falls. See `docs/BALANCE_SYSTEM.md` and `docs/BALANCE_TESTING.md`.
 
 ## M4 — Momentum and recovery stepping
 
@@ -38,4 +38,4 @@ A look target driving `head` and `neck` only. No new physical bodies. `HeadF` st
 
 A single owner of motor setpoints so standing, stepping, falling, grabbing, and injury do not write the same joint in the same step. The physics world remains unaware of behaviors. It only applies the motors and integrates.
 
-v0.2.0 does not implement M3–M10. M2's motor controller is the setpoint owner those phases should share.
+v0.3.0 does not implement M4–M10. M3 already sends one motor task so a later behavior does not write the same joint on its own. M2's `MotorController::apply` remains the setpoint writer.

@@ -41,6 +41,16 @@ struct RagdollJoint {
     Vec3 extensionAxis{};
     Vec3 flexionDirection{};
     Vec3 flexionAxis{};
+    // Body-local constraint frames at the imported pose. Standing placement
+    // uses these so a reset can rebuild a valid chain without writing transforms
+    // again while the simulation is running.
+    Vec3 anchorInParent{};
+    Vec3 anchorInChild{};
+    Vec3 axisXInParent{1.f, 0.f, 0.f};
+    Vec3 axisYInParent{0.f, 1.f, 0.f};
+    Vec3 axisXInChild{1.f, 0.f, 0.f};
+    Vec3 axisYInChild{0.f, 1.f, 0.f};
+    Quat bindConstraint{};
 };
 
 struct Ragdoll {

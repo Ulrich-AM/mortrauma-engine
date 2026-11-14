@@ -329,12 +329,26 @@ void MotorController::updateRelaxation(float dt) {
     }
 }
 
+void MotorController::setMotorTask(std::vector<MotorTaskCommand> commands) {
+    task_ = std::move(commands);
+    taskIndex_.clear();
+    for (int i = 0; i < int(task_.size()); ++i) {
+        taskIndex_[task_[i].jointId] = i;
+    }
+    taskActive_ = true;
+}
+
+void MotorController::clearMotorTask() {
+    taskActive_ = false;
+    task_.clear();
+    taskIndex_.clear();
+}
+
 bool MotorController::apply(PhysicsWorld& world, const Ragdoll& ragdoll) {
     if (!bound_) {
         Log::error("Motor controller apply called before bind.");
         return false;
     }
-    const MotorProfile& gains = activeProfile();
     bool ok = true;
     for (const auto& ragdollJoint : ragdoll.joints) {
         const auto found = index_.find(ragdollJoint.id);
@@ -352,13 +366,23 @@ bool MotorController::apply(PhysicsWorld& world, const Ragdoll& ragdoll) {
             }
         }
         const float strength = group != nullptr ? group->strength : 1.f;
-        const float activation = clampf(joint.activation, 0.f, 1.f);
-        const bool passive = mode_ == MotorMode::Passive || activation < 0.02f;
+        const MotorTaskCommand* task = nullptr;
+        if (taskActive_) {
+            const auto tasked = taskIndex_.find(joint.id);
+            if (tasked != taskIndex_.end()) {
+                task = &task_[tasked->second];
+            }
+        }
+        const float activation = clampf(task != nullptr ? task->activation : joint.activation, 0.f, 1.f);
+        const bool passive = activation < 0.02f || (task == nullptr && mode_ == MotorMode::Passive);
+        const MotorProfile& gains = task != nullptr ? profile(MotorMode::Active) : activeProfile();
         AngularMotorCommand command;
         command.enabled = !passive;
-        command.targetOrientation = finite(joint.target) ? normalize(joint.target) : Quat::identity();
+        const Quat requested = task != nullptr ? task->target : joint.target;
+        command.targetOrientation = finite(requested) ? normalize(requested) : Quat::identity();
         command.targetAngularVelocity = {};
-        const float frequency = joint.overrideGains ? joint.frequencyHz : gains.frequencyHz;
+        const float profileFrequency = joint.overrideGains ? joint.frequencyHz : gains.frequencyHz;
+        const float frequency = task != nullptr && task->frequencyHz > 0.f ? task->frequencyHz : profileFrequency;
         const float damping = joint.overrideGains ? joint.dampingRatio : gains.dampingRatio;
         const float torque = joint.overrideGains ? joint.torqueLimit : gains.torqueFor(joint.id);
         command.frequencyHz = frequency * activation;
@@ -383,6 +407,7 @@ bool MotorController::apply(PhysicsWorld& world, const Ragdoll& ragdoll) {
 }
 
 void MotorController::onSimulationReset(PhysicsWorld& world, const Ragdoll& ragdoll) {
+    clearMotorTask();
     relaxing_ = false;
     mode_ = MotorMode::Passive;
     for (auto& group : groups_) {

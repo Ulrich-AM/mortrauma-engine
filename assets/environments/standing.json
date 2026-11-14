@@ -1,0 +1,5 @@
+{
+  "name": "Standing balance",
+  "description": "Flat floor, one Humanoidguy, no moving obstacles and no pelvis fixture. The character is placed by the standing reset before simulation; balance itself only commands joint motors.",
+  "floor": {"half_extents": [8.0, 0.1, 8.0], "center": [0.0, -0.1, 0.0], "friction": 0.9}
+}

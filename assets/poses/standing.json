@@ -1,0 +1,8 @@
+{
+  "name": "Standing",
+  "procedure": "standing_reference",
+  "description": "Anatomical standing reference used by the balance reset. Knees and hips are measured from extension, not from the imported crouch. The numeric flexion lives in the balance presets.",
+  "knee_flexion_deg": 14,
+  "hip_flexion_deg": 10,
+  "ankle_flexion_deg": 0
+}

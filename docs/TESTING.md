@@ -2,7 +2,7 @@
 
 Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. They load `humanoidguy_rigged.fbx` and the character JSON. A missing asset fails the test. The procedural stand-in is not accepted as a pass. `mortrauma_tests DUMP` prints bind positions and is not part of CTest.
 
-v0.2.0 adds MOT-001 through MOT-012. The current 25-test run, with measured motor errors, is in `docs/M2_TESTING.md`. The table below is the original v0.1.0 record.
+v0.2.0 adds MOT-001 through MOT-012. The motor numbers are in `docs/M2_TESTING.md`. v0.3.0 adds GRAB-001 through GRAB-007 and BAL-001 through BAL-014. The standing numbers and the cases that are expected to fall are in `docs/BALANCE_TESTING.md`. The table below is the original v0.1.0 record.
 
 The run recorded below is a Linux Release build (Clang 18, Jolt 5.3.0, single-threaded solver) on 14 Nov 2026. All 9 tests passed. Total CTest time was about 0.7 s.
 

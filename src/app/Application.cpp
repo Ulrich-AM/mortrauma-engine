@@ -3,6 +3,8 @@
 #include "mortrauma/assets/ModelLoader.hpp"
 #include "mortrauma/core/Log.hpp"
 #include "mortrauma/core/Paths.hpp"
+#include "mortrauma/balance/BalanceController.hpp"
+#include "mortrauma/balance/StandingPose.hpp"
 #include "mortrauma/motors/MotorController.hpp"
 #include "mortrauma/motors/PoseController.hpp"
 #include "mortrauma/poses/PoseLibrary.hpp"
@@ -70,6 +72,7 @@ struct App {
     Ragdoll ragdoll;
     MotorController motors;
     PoseController poseController;
+    BalanceController balance;
     PoseLibrary poseLibrary;
     std::string motorJoint = "elbow_1";
     float transitionDuration = 0.6f;
@@ -135,6 +138,8 @@ struct App {
     float grabDamping = 0.8f;
     float pushStrength = 18.f;
     PushDirection pushDirection = PushDirection::Camera;
+    float balanceImpulse = 12.f;
+    int balancePushBody = 0;
     int grab = -1;
     Vec3 grabPlanePoint{};
     Vec3 grabPlaneNormal{};
@@ -198,6 +203,10 @@ struct App {
                 world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, false);
                 world.setBodyVelocity(body.physics, {}, {});
             }
+        }
+        std::string balanceError;
+        if (!balance.loadPreset("normal", balanceError)) {
+            Log::error(balanceError);
         }
         if (!motors.bind(world, ragdoll)) {
             return false;
@@ -315,6 +324,28 @@ struct App {
         addStaticBox(name, center, half, rotation, true);
     }
 
+    void releaseGrab() {
+        if (grab >= 0) {
+            world.endGrab(grab);
+            grab = -1;
+        }
+    }
+
+    void resetToStanding() {
+        releaseGrab();
+        world.endSupport();
+        poseController.cancel();
+        const StandingPlacement placement = placeStandingPose(world, ragdoll, balance.config());
+        if (!placement.ok) {
+            poseMessage = placement.error;
+            return;
+        }
+        balance.setReference(placement.reference);
+        balance.resetState();
+        accumulator = 0.f;
+        poseMessage = "Placed the standing test pose. Joint separation " + std::to_string(placement.maxSeparation) + " m.";
+    }
+
     void resetSimulation() {
         world.endSupport();
         world.clearGrabs();
@@ -322,6 +353,7 @@ struct App {
         poseController.cancel();
         resetRagdoll(world, ragdoll);
         motors.onSimulationReset(world, ragdoll);
+        balance.resetState();
         trace.clear();
         for (const auto& body : environment) {
             world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, body.dynamic);
@@ -387,8 +419,12 @@ struct App {
 
     void stepOnce() {
         const float dt = world.settings().fixedTimestep;
-        poseController.update(dt, motors);
+        if (!balance.enabled()) {
+            poseController.update(dt, motors);
+        }
         motors.updateRelaxation(dt);
+        balance.observe(world, ragdoll, dt);
+        balance.command(ragdoll, motors);
         motors.apply(world, ragdoll);
         if (!world.step(dt, collisionSteps)) {
             return;
@@ -530,6 +566,49 @@ struct App {
             renderer.drawSphere(anchor.position, 0.055f, {0.95f, 0.82f, 0.15f});
             renderer.drawLine(anchor.position, anchor.position + Vec3{0.f, 0.55f, 0.f}, {0.95f, 0.82f, 0.15f});
         }
+        const BalanceDiagnostics& overlays = balance.diagnostics();
+        const BalanceState& balanceState = balance.state();
+        if (balanceState.finite) {
+            if (overlays.showCom) {
+                renderer.drawSphere(balanceState.com, 0.045f, {0.95f, 0.35f, 0.2f});
+            }
+            if (overlays.showProjection) {
+                renderer.drawSphere(balanceState.comProjection + Vec3{0.f, 0.01f, 0.f}, 0.03f, {0.95f, 0.75f, 0.2f});
+                renderer.drawLine(balanceState.com, balanceState.comProjection, {0.95f, 0.55f, 0.2f});
+            }
+            if (overlays.showVelocity) {
+                renderer.drawLine(balanceState.com, balanceState.com + balanceState.comVelocity * 0.25f, {1.f, 0.4f, 0.3f});
+            }
+            for (const auto& contact : balanceState.contacts) {
+                if (overlays.showContacts) {
+                    const Vec3 color = contact.supporting ? Vec3{0.25f, 0.9f, 0.4f} : Vec3{0.9f, 0.25f, 0.25f};
+                    renderer.drawSphere(contact.point, 0.018f, color);
+                }
+                if (overlays.showNormals) {
+                    renderer.drawLine(contact.point, contact.point + contact.normal * 0.16f, {0.35f, 0.8f, 1.f});
+                }
+            }
+            if (overlays.showPolygon) {
+                const auto& hull = balanceState.hull;
+                for (size_t i = 0; i < hull.size(); ++i) {
+                    if (hull.size() == 2 && i > 0) {
+                        break;
+                    }
+                    const size_t next = hull.size() < 3 ? 1 : (i + 1) % hull.size();
+                    renderer.drawLine(hull[i] + Vec3{0.f, 0.012f, 0.f}, hull[next] + Vec3{0.f, 0.012f, 0.f}, {0.2f, 0.85f, 0.5f});
+                }
+            }
+            if (overlays.showTorso) {
+                if (const auto* chest = ragdoll.find("chest")) {
+                    const Vec3 origin = world.bodyState(chest->physics).position;
+                    renderer.drawLine(origin, origin + Vec3{0.f, 0.45f, 0.f}, {0.85f, 0.85f, 0.95f});
+                    renderer.drawLine(origin, origin + balanceState.torsoUp * 0.45f, {0.4f, 0.7f, 1.f});
+                }
+            }
+            if (overlays.showCorrection && length(balanceState.correction) > 1e-4f) {
+                renderer.drawLine(balanceState.comProjection, balanceState.comProjection + balanceState.correction, {1.f, 0.35f, 0.8f});
+            }
+        }
         renderer.endScene();
     }
 
@@ -606,6 +685,9 @@ struct App {
             if (tool == Tool::Grab && playing && hit.hit && world.bodyState(hit.body).isDynamic) {
                 grabPlanePoint = hit.point;
                 grabPlaneNormal = camera.forward();
+                if (grab >= 0) {
+                    world.endGrab(grab);
+                }
                 grab = world.beginGrab(hit.body, hit.point, hit.point, grabFrequency, grabDamping);
                 selection = SelectionKind::Body;
                 selectedBody = hit.body;
@@ -621,6 +703,124 @@ struct App {
             world.endGrab(grab);
             grab = -1;
         }
+    }
+
+    void pushCharacter(Vec3 direction) {
+        const char* id = balancePushBody == 1 ? "pelvis" : (balancePushBody == 2 ? "head" : "chest");
+        const RagdollBody* body = ragdoll.find(id);
+        if (body == nullptr || length(direction) < 1e-4f) {
+            return;
+        }
+        const BodyState state = world.bodyState(body->physics);
+        world.addImpulse(body->physics, normalize(direction) * std::max(balanceImpulse, 0.f), state.position);
+        playing = true;
+    }
+
+    void drawBalanceLaboratory() {
+        ImGui::Begin("Balance Laboratory");
+        bool enabled = balance.enabled();
+        if (ImGui::Checkbox("Enable balance", &enabled)) {
+            if (enabled) {
+                world.endSupport();
+                poseController.cancel();
+            }
+            balance.setEnabled(enabled, motors);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Reset to standing test pose")) {
+            resetToStanding();
+        }
+        int preset = 1;
+        if (balance.config().name == "Conservative") {
+            preset = 0;
+        } else if (balance.config().name == "Aggressive") {
+            preset = 2;
+        }
+        if (ImGui::Combo("Preset", &preset, "Conservative\0Normal\0Aggressive\0")) {
+            std::string error;
+            const char* name = preset == 0 ? "conservative" : (preset == 2 ? "aggressive" : "normal");
+            if (!balance.loadPreset(name, error)) {
+                poseMessage = error;
+            }
+        }
+        BalanceConfig config = balance.config();
+        bool edited = false;
+        edited |= ImGui::SliderFloat("Balance strength (torque scale)", &config.balanceStrength, 0.f, 1.5f);
+        edited |= ImGui::SliderFloat("Ankle correction (gain scale)", &config.ankleCorrection, 0.f, 2.f);
+        edited |= ImGui::SliderFloat("Hip correction (gain scale)", &config.hipCorrection, 0.f, 2.f);
+        edited |= ImGui::SliderFloat("Torso upright (gain scale)", &config.torsoUpright, 0.f, 2.f);
+        edited |= ImGui::SliderFloat("COM velocity damping (scale)", &config.comVelocityDamping, 0.f, 2.f);
+        edited |= ImGui::SliderFloat("Recovery radius (m)", &config.recoveryRadiusM, 0.05f, 0.45f);
+        if (edited) {
+            balance.setConfig(config);
+        }
+        ImGui::Text("State %s    strategy %s", balancePhaseName(balance.state().phase), balance.state().strategy.c_str());
+        const BalanceState& state = balance.state();
+        ImGui::Text("COM (m)  %.3f  %.3f  %.3f", state.com.x, state.com.y, state.com.z);
+        ImGui::Text("COM velocity (m/s)  %.3f  %.3f  %.3f", state.comVelocity.x, state.comVelocity.y, state.comVelocity.z);
+        ImGui::Text("COM projection (m)  %.3f  %.3f", state.comProjection.x, state.comProjection.z);
+        ImGui::Text("Left foot %s   points %d   load proxy %d", state.leftGrounded ? "supporting" : (state.leftTouching ? "touching" : "free"),
+                    state.leftPoints, int(state.leftLoadProxy));
+        ImGui::Text("Right foot %s   points %d   load proxy %d", state.rightGrounded ? "supporting" : (state.rightTouching ? "touching" : "free"),
+                    state.rightPoints, int(state.rightLoadProxy));
+        ImGui::Text("Support points %d    margin %+0.3f m    capture outside %.3f m", int(state.hull.size()), state.margin, state.captureDistance);
+        ImGui::Text("Torso tilt %.1f deg    torso rate %.2f rad/s    pelvis tilt %.1f deg", degrees(state.torsoTilt),
+                    length(state.torsoAngularVelocity), degrees(state.pelvisTilt));
+        ImGui::Text("Ankle effort %.2f N·m    hip effort %.2f N·m    saturated %d", state.ankleEffort, state.hipEffort, state.saturatedMotors);
+        ImGui::Text("Authority  ankle %s  hip %s", state.ankleAuthority ? "yes" : "no", state.hipAuthority ? "yes" : "no");
+        ImGui::Separator();
+        ImGui::TextUnformatted("Overlays");
+        BalanceDiagnostics& view = balance.diagnostics();
+        ImGui::Checkbox("Center of mass", &view.showCom);
+        ImGui::SameLine();
+        ImGui::Checkbox("Projected COM", &view.showProjection);
+        ImGui::Checkbox("COM velocity", &view.showVelocity);
+        ImGui::SameLine();
+        ImGui::Checkbox("Contacts", &view.showContacts);
+        ImGui::Checkbox("Support polygon", &view.showPolygon);
+        ImGui::SameLine();
+        ImGui::Checkbox("Contact normals", &view.showNormals);
+        ImGui::Checkbox("Torso upright", &view.showTorso);
+        ImGui::SameLine();
+        ImGui::Checkbox("Correction", &view.showCorrection);
+        auto plot = [&](const char* label, float BalanceSample::*field) {
+            const auto& history = view.history;
+            if (history.size() < 2) {
+                return;
+            }
+            std::vector<float> values(history.size());
+            for (size_t i = 0; i < history.size(); ++i) {
+                values[i] = history[i].*field;
+            }
+            ImGui::PlotLines(label, values.data(), int(values.size()), 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 48));
+        };
+        plot("COM forward (m)", &BalanceSample::comForward);
+        plot("COM speed (m/s)", &BalanceSample::comSpeed);
+        plot("Torso tilt (rad)", &BalanceSample::torsoTilt);
+        plot("Ankle effort (N·m)", &BalanceSample::ankleEffort);
+        plot("Hip effort (N·m)", &BalanceSample::hipEffort);
+        plot("State", &BalanceSample::phase);
+        ImGui::Separator();
+        ImGui::TextUnformatted("Known impulses. The mouse Push tool is unchanged.");
+        ImGui::SliderFloat("Impulse (N·s)", &balanceImpulse, 1.f, 80.f);
+        ImGui::Combo("Application point", &balancePushBody, "Chest\0Pelvis\0Head\0");
+        if (ImGui::Button("Forward")) {
+            pushCharacter(balance.state().facing);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Backward")) {
+            pushCharacter(-balance.state().facing);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Left")) {
+            pushCharacter(-balance.state().right);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Right")) {
+            pushCharacter(balance.state().right);
+        }
+        ImGui::TextWrapped("Balance commands the existing torque-limited motors. It does not anchor the pelvis, and the support fixture cannot be enabled in this mode. Load is a contact count, not a measured force.");
+        ImGui::End();
     }
 
     void drawMotorLaboratory() {
@@ -804,6 +1004,8 @@ struct App {
             if (ImGui::Button("Remove fixture")) {
                 world.endSupport();
             }
+        } else if (balance.enabled()) {
+            ImGui::TextUnformatted("Pelvis support stays off while balance is enabled.");
         } else if (ImGui::Button("Suspend pelvis")) {
             if (const auto* pelvis = ragdoll.find("pelvis")) {
                 world.beginSupport(pelvis->physics, 8.f, 1.f);
@@ -1128,10 +1330,14 @@ struct App {
 
         ImGui::Begin("Simulation");
         if (ImGui::Button(playing ? "Pause" : "Play")) {
+            if (playing) {
+                releaseGrab();
+            }
             playing = !playing;
         }
         ImGui::SameLine();
         if (ImGui::Button("Step")) {
+            releaseGrab();
             playing = false;
             stepOnce();
         }
@@ -1146,11 +1352,22 @@ struct App {
                     1.f / world.settings().fixedTimestep, collisionSteps);
         ImGui::Text("Tools");
         int toolIndex = int(tool);
-        if (ImGui::RadioButton("Select", &toolIndex, 0)) tool = Tool::Select;
+        if (ImGui::RadioButton("Select", &toolIndex, 0)) {
+            releaseGrab();
+            tool = Tool::Select;
+        }
         ImGui::SameLine();
-        if (ImGui::RadioButton("Grab", &toolIndex, 1)) tool = Tool::Grab;
+        if (ImGui::RadioButton("Grab", &toolIndex, 1)) {
+            if (tool != Tool::Grab) {
+                releaseGrab();
+            }
+            tool = Tool::Grab;
+        }
         ImGui::SameLine();
-        if (ImGui::RadioButton("Push", &toolIndex, 2)) tool = Tool::Push;
+        if (ImGui::RadioButton("Push", &toolIndex, 2)) {
+            releaseGrab();
+            tool = Tool::Push;
+        }
         ImGui::SliderFloat("Grab strength", &grabFrequency, 1.f, 20.f);
         ImGui::SliderFloat("Grab damping", &grabDamping, 0.f, 1.5f);
         ImGui::SliderFloat("Impulse", &pushStrength, 1.f, 200.f);
@@ -1274,6 +1491,7 @@ struct App {
             }
         }
         ImGui::End();
+        drawBalanceLaboratory();
         drawMotorLaboratory();
     }
 };
@@ -1317,7 +1535,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.0 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();
@@ -1360,6 +1578,9 @@ int Application::run() {
         static bool spaceWasDown = false;
         const bool spaceDown = glfwGetKey(window, GLFW_KEY_SPACE) == GLFW_PRESS;
         if (spaceDown && !spaceWasDown) {
+            if (app.playing) {
+                app.releaseGrab();
+            }
             app.playing = !app.playing;
         }
         spaceWasDown = spaceDown;
