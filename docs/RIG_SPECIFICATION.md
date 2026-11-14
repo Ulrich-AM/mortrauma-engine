@@ -70,7 +70,7 @@ In the FBX node hierarchy the root `humanoidguy_RIG` has three children: `Pelvis
 
 ## Joints
 
-Twenty joints, one connected component, 21 bodies. Translation is locked on every joint. Angles are relative to the bind pose. Natural preset scale is 1.
+Twenty joints, one connected component, 21 bodies. Translation is locked on every joint. Elbow, knee and hip angles are relative to anatomical extension. The other joints are still relative to the imported pose. Natural preset scale is 1.
 
 | Joint | Parent body | Child body | Shape | Limits (degrees) |
 | --- | --- | --- | --- | --- |
@@ -87,6 +87,6 @@ Twenty joints, one connected component, 21 bodies. Translation is locked on ever
 | knee_* | thigh | calf | pyramid, flexion toward the pelvis | twist ±10, side ±8, flexion 0 to 145 |
 | ankle_* | calf | foot | pyramid | twist ±20, swing about ±30 to 40 |
 
-Attachment frames are built in world space at the child segment start, with the twist axis along the child bone. Both bodies store that frame in local space, so the relative orientation is identity in the bind pose. Hinge axes for elbows, knees, and hips are oriented so the positive swing closes the joint (elbow toward the shoulder, knee toward the pelvis, hip toward forward-up).
+Attachment frames are built in world space at the child segment start. Translation is locked. For elbows and knees the parent frame's X axis is the parent bone, which is full extension, and the child frame's X axis is the child bone. Positive swing 2 is flexion in the authored bend plane. The imported crouch is therefore about 79° at the elbows and 85–89° at the knees, and the limits 0° to 145° allow the limb to straighten. Hips use a shared frame: X is world down, positive swing 2 swings the thigh toward the toes, and the limits are −30° to 110° from vertical. Shoulders stay cones centered on the imported arm pose. See `docs/JOINT_LIMITS.md` for the measured angles.
 
 Constraint anchors at the bind pose are coincident within 5 mm (RIG-002). During a passive fall they stay within 2 cm (RIG-003, PHY-002).

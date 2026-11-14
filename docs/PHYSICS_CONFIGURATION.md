@@ -34,7 +34,7 @@ Files in `assets/configurations/presets/`.
 | Natural | 0.08 | 0.18 | 2.0 | 1.0 |
 | Firm | 0.15 | 0.35 | 8.0 | 0.8 |
 
-Limit scale multiplies the anatomical angles. A scale above 1 only widens limits; the bind pose remains inside them because it is the zero angle. Saving a preset rejects negative damping, friction above the slider range, or a non-positive limit scale.
+Limit scale multiplies the configured angles. For elbows and knees, 0° is full extension and the imported crouch sits near 80–90° of flexion, inside 0° to 145°. For hips, 0° is a thigh pointing down. Other joints are still zero at the imported pose. Saving a preset rejects negative damping, friction above the slider range, or a non-positive limit scale. Motors stay off.
 
 ## Grab and push
 

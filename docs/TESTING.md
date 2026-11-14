@@ -29,6 +29,10 @@ PHY-006  Passed
 | PHY-004 | After 1 s and a reset, every body is within 0.1 mm of its initial pose and velocity is below 1e-4 |
 | PHY-005 | Two replays of 2 s with the same impulse at step 60 differ by less than 0.1 mm. The measured deviation was 0. |
 | PHY-006 | Impulses of 5, 20, and 80 N·s on the chest, in six directions, applied off-center. After 1.5 s each, motion is finite, speed is under 60, separation is under 5 cm, and the graph is still one component. |
+| RIG-004 | Bind-pose elbow and knee swing 2 matches the geometric bend (about 79° and 85–89°), not 0°. A straight pose reads about 0° and is inside the limits. 25° of hyperextension and 160° of flexion are outside. Pivots stay under 1 cm. |
+| RIG-005 | Adding 20° of flexion increases swing 2 by about 20° on both elbows and both knees. |
+| RIG-006 | Hip flexion at the crouch is about 71–74° from vertical. A thigh pointing down reads 0° and is inside −30° to 110°. 45° of hip hyperextension is outside. Abduction signs are opposite. Each shoulder cone of 80° contains an arm hanging at the side (about 36–38°). |
+| LIM-001 | With the parent held, zero gravity and the body lifted clear of the floor, both elbows and both knees reach the 0° extension limit (solver slop about −0.2°). Separation stays under 2 cm. The same drive with 2 N·m friction reaches under 15°. Contacts may exist; the stop that matters is the limit flag. |
 
 PHY-002 on this run settled to exactly 0 linear and angular speed (bodies slept) with the lowest body center at y = 0.081 m.
 

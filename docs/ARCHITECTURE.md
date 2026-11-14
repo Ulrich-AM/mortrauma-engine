@@ -24,7 +24,7 @@ The step function rejects re-entry. The application owns the fixed-step accumula
 Joints are Jolt `SixDOFConstraint`s:
 
 - Translation X/Y/Z are fixed. A limb cannot separate from its parent by stretching a soft positional spring.
-- Angular motion is a cone or a pyramid of limits, expressed relative to the bind pose (the constraint frames coincide there, so the relative angle is zero).
+- Angular motion is a cone or a pyramid of limits. Elbows, knees and hips use an anatomical neutral, so the imported crouch is not zero. Other joints still coincide at the imported pose.
 - Angular friction torque is the passive resistance. Presets scale it.
 - Motor settings (frequency, damping, torque limit) are stored on the constraint and left **off**. A later phase can enable torque-limited motors without changing the joint identity.
 

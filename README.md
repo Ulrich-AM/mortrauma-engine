@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.1.0 is a native C++ laboratory for passive, physically simulated humanoid reactions. This release is the application foundation (M0) and a fully dynamic ragdoll (M1). It does not balance, walk, or react intelligently. The body is a connected articulated rigid-body system: it falls, collides, tumbles, and settles.
+MORTRAUMA v0.1.1 is a native C++ laboratory for passive, physically simulated humanoid reactions. v0.1.1 corrects elbow, knee and hip limits so they are measured from anatomical extension instead of the imported crouch. This release is the application foundation (M0) and a fully dynamic ragdoll (M1). It does not balance, walk, or react intelligently. The body is a connected articulated rigid-body system: it falls, collides, tumbles, and settles.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 

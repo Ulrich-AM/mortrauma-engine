@@ -1,5 +1,8 @@
 name: Windows Release
 
+env:
+  PACKAGE_VERSION: "0.1.1"
+
 on:
   push:
     branches: [main, "feature/**"]
@@ -47,7 +50,7 @@ jobs:
           Copy-Item assets/configurations/*.json (Join-Path $root "configurations")
           Copy-Item -Recurse assets/configurations/presets (Join-Path $root "configurations/presets")
           @"
-          MORTRAUMA v0.1.0
+          MORTRAUMA v$env:PACKAGE_VERSION
           Physical Reactions Laboratory
 
           Run MORTRAUMA.exe from this folder. Assets are loaded relative to the executable.
@@ -58,14 +61,15 @@ jobs:
           This package is a passive ragdoll. Press Play to simulate. It does not balance or walk.
           See the repository docs for joint mapping, tests, and known limitations.
           "@ | Set-Content -Encoding utf8 (Join-Path $root "README.txt")
-          if (Test-Path "MORTRAUMA-v0.1.0-Windows-x64.zip") { Remove-Item "MORTRAUMA-v0.1.0-Windows-x64.zip" }
-          Compress-Archive -Path $root -DestinationPath "MORTRAUMA-v0.1.0-Windows-x64.zip"
+          $zip = "MORTRAUMA-v$env:PACKAGE_VERSION-Windows-x64.zip"
+          if (Test-Path $zip) { Remove-Item $zip }
+          Compress-Archive -Path $root -DestinationPath $zip
 
       - name: Upload package
         uses: actions/upload-artifact@v4
         with:
-          name: MORTRAUMA-v0.1.0-Windows-x64
-          path: MORTRAUMA-v0.1.0-Windows-x64.zip
+          name: MORTRAUMA-v0.1.1-Windows-x64
+          path: MORTRAUMA-v0.1.1-Windows-x64.zip
           if-no-files-found: error
 
   release:
@@ -81,7 +85,7 @@ jobs:
       - name: Download package
         uses: actions/download-artifact@v4
         with:
-          name: MORTRAUMA-v0.1.0-Windows-x64
+          name: MORTRAUMA-v0.1.1-Windows-x64
           path: dist
 
       - name: Publish release
@@ -90,13 +94,19 @@ jobs:
         run: |
           set -euo pipefail
           tag="${GITHUB_REF_NAME}"
-          asset="dist/MORTRAUMA-v0.1.0-Windows-x64.zip"
+          asset="dist/MORTRAUMA-v${PACKAGE_VERSION}-Windows-x64.zip"
+          notes="docs/RELEASE_NOTES_v${PACKAGE_VERSION}.md"
           test -f "$asset"
+          test -f "$notes"
           if gh release view "$tag" >/dev/null 2>&1; then
             echo "Release $tag already exists. Refusing to overwrite it."
             exit 1
           fi
+          if [ "$tag" = "v0.1.0" ]; then
+            echo "Refusing to publish over the existing v0.1.0 release."
+            exit 1
+          fi
           gh release create "$tag" "$asset" \
             --title "MORTRAUMA $tag" \
-            --notes-file docs/RELEASE_NOTES_v0.1.0.md
+            --notes-file "$notes"
           gh release view "$tag" --json tagName,assets --jq '.assets[].name'

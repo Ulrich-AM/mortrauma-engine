@@ -388,7 +388,17 @@ struct App {
                                                                                                          : Vec3{0.95f, 0.55f, 0.2f};
                 renderer.drawLine(state.anchorParentWorld, state.anchorChildWorld, color);
                 renderer.drawLine(state.anchorParentWorld, state.anchorParentWorld + state.twistAxisWorld * 0.12f, {0.9f, 0.25f, 0.25f});
+                renderer.drawLine(state.anchorParentWorld, state.anchorParentWorld + state.swingAxisWorld * 0.1f, {0.25f, 0.55f, 1.f});
                 renderer.drawLine(state.anchorParentWorld, state.anchorParentWorld + state.bendAxisWorld * 0.1f, {0.3f, 0.85f, 0.35f});
+                if (selection == SelectionKind::Joint && selectedJoint == joint.physics && state.type.find("cone") == std::string::npos) {
+                    const auto directionAt = [&](float angle) {
+                        return state.twistAxisWorld * std::cos(angle) + state.swingAxisWorld * std::sin(angle);
+                    };
+                    const Vec3 anchor = state.anchorParentWorld;
+                    renderer.drawLine(anchor, anchor + directionAt(state.swing2Min) * 0.18f, {0.55f, 0.55f, 0.58f});
+                    renderer.drawLine(anchor, anchor + directionAt(state.swing2Max) * 0.18f, {0.35f, 0.9f, 0.95f});
+                    renderer.drawLine(anchor, anchor + directionAt(state.rotationRadians.z) * 0.2f, {1.f, 0.9f, 0.35f});
+                }
             }
         }
         if (showContacts) {
@@ -525,6 +535,7 @@ struct App {
             ImGui::DockBuilderDockWindow("Simulation", bottom);
             ImGui::DockBuilderDockWindow("Physics", bottom);
             ImGui::DockBuilderDockWindow("Diagnostics", bottom);
+            ImGui::DockBuilderDockWindow("Joint inspector", right);
             ImGui::DockBuilderFinish(dockspace);
         }
         ImGui::End();
@@ -630,6 +641,83 @@ struct App {
             }
         } else {
             ImGui::TextUnformatted("Select a body or joint.");
+        }
+        ImGui::End();
+
+        ImGui::Begin("Joint inspector");
+        RagdollJoint* selected = nullptr;
+        if (selection == SelectionKind::Joint) {
+            for (auto& joint : ragdoll.joints) {
+                if (joint.physics == selectedJoint) {
+                    selected = &joint;
+                    break;
+                }
+            }
+        }
+        if (selected == nullptr) {
+            ImGui::TextUnformatted("Select a joint in the hierarchy.");
+            ImGui::TextUnformatted("Red is the extension axis, blue is positive flexion, green is the hinge.");
+        } else {
+            const auto state = world.jointState(selected->physics);
+            const auto reached = [](bool atLimit) { return atLimit ? "yes" : "no"; };
+            ImGui::Text("%s", state.name.c_str());
+            ImGui::Text("Bodies  %s  ->  %s", state.parentName.c_str(), state.childName.c_str());
+            ImGui::Separator();
+            ImGui::Text("Twist    %6.1f deg   limit %6.1f .. %6.1f   reached %s", degrees(state.rotationRadians.x),
+                        degrees(state.twistMin), degrees(state.twistMax), reached(state.twistAtLimit));
+            ImGui::Text("Swing 1  %6.1f deg   limit %6.1f .. %6.1f   reached %s", degrees(state.rotationRadians.y),
+                        degrees(state.swing1Min), degrees(state.swing1Max), reached(state.swing1AtLimit));
+            ImGui::Text("Swing 2  %6.1f deg   limit %6.1f .. %6.1f   reached %s", degrees(state.rotationRadians.z),
+                        degrees(state.swing2Min), degrees(state.swing2Max), reached(state.swing2AtLimit));
+            ImGui::Text("Anatomical neutral offset (deg)  %.1f  %.1f  %.1f", degrees(selected->neutralOffset.x),
+                        degrees(selected->neutralOffset.y), degrees(selected->neutralOffset.z));
+            ImGui::Text("Parent frame  X %.2f %.2f %.2f", state.twistAxisWorld.x, state.twistAxisWorld.y, state.twistAxisWorld.z);
+            ImGui::Text("              Y %.2f %.2f %.2f", state.swingAxisWorld.x, state.swingAxisWorld.y, state.swingAxisWorld.z);
+            ImGui::Text("              Z %.2f %.2f %.2f", state.bendAxisWorld.x, state.bendAxisWorld.y, state.bendAxisWorld.z);
+            ImGui::Text("Child frame   X %.2f %.2f %.2f", state.childTwistAxisWorld.x, state.childTwistAxisWorld.y,
+                        state.childTwistAxisWorld.z);
+            ImGui::Text("              Y %.2f %.2f %.2f", state.childSwingAxisWorld.x, state.childSwingAxisWorld.y,
+                        state.childSwingAxisWorld.z);
+            ImGui::Text("              Z %.2f %.2f %.2f", state.childBendAxisWorld.x, state.childBendAxisWorld.y,
+                        state.childBendAxisWorld.z);
+            ImGui::Text("Angular friction  %.2f Nm", state.angularFriction);
+            ImGui::Text("Constraint error  %.4f m", state.separation);
+            ImGui::Text("Status  %s", state.status.c_str());
+            ImGui::TextUnformatted("Motors are off. Limits are measured from the anatomical neutral, not from the imported crouch.");
+            if (!playing) {
+                float twistMin = degrees(state.twistMin);
+                float twistMax = degrees(state.twistMax);
+                float swing1Min = degrees(state.swing1Min);
+                float swing1Max = degrees(state.swing1Max);
+                float swing2Min = degrees(state.swing2Min);
+                float swing2Max = degrees(state.swing2Max);
+                float friction = state.angularFriction;
+                bool edited = false;
+                edited |= ImGui::SliderFloat("Twist min", &twistMin, -160.f, 160.f);
+                edited |= ImGui::SliderFloat("Twist max", &twistMax, -160.f, 160.f);
+                edited |= ImGui::SliderFloat("Swing 1 min", &swing1Min, -160.f, 160.f);
+                edited |= ImGui::SliderFloat("Swing 1 max", &swing1Max, -160.f, 160.f);
+                edited |= ImGui::SliderFloat("Swing 2 min", &swing2Min, -160.f, 160.f);
+                edited |= ImGui::SliderFloat("Swing 2 max", &swing2Max, -160.f, 160.f);
+                if (ImGui::SliderFloat("Joint friction", &friction, 0.f, 30.f)) {
+                    world.setJointAngularFriction(selected->physics, friction);
+                }
+                const bool ordered = twistMin < twistMax - 0.5f && swing1Min < swing1Max - 0.5f && swing2Min < swing2Max - 0.5f;
+                if (edited && ordered) {
+                    world.setJointLimits(selected->physics, radians(twistMin), radians(twistMax), radians(swing1Min), radians(swing1Max),
+                                         radians(swing2Min), radians(swing2Max));
+                    selected->base.twistMin = radians(twistMin);
+                    selected->base.twistMax = radians(twistMax);
+                    selected->base.swing1Min = radians(swing1Min);
+                    selected->base.swing1Max = radians(swing1Max);
+                    selected->base.swing2Min = radians(swing2Min);
+                    selected->base.swing2Max = radians(swing2Max);
+                } else if (edited) {
+                    ImGui::TextUnformatted("Each minimum must stay below its maximum.");
+                }
+            } else {
+                ImGui::TextUnformatted("Pause the simulation to edit limits and friction.");
+            }
         }
         ImGui::End();
 
