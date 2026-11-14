@@ -38,9 +38,11 @@ Jolt 5.3 does not support soft angular limits. Compliance is friction plus body 
 
 `assets/configurations/humanoidguy.json` lists anatomical bodies and joints: bone names, masses, limit angles, and whether a joint is a cone, a pyramid, or a hinge-oriented pyramid (elbow, knee, hip flexion). The builder refuses to continue if a referenced bone is missing, if a skinned bone is not driven, or if the constraint graph is not a single component. Hips are connected because the JSON says so, not because the FBX node parent happens to be the pelvis. In this file the hip bones are siblings of the pelvis.
 
+v0.3.4 loads that file only. There is no character catalog. Another JSON with the same schema can still be built by `RagdollBuilder`; the application does not offer a second one. The importer requires skin bones.
+
 ## Rendering
 
-Each capsule mesh is rigidly weighted to one bone. Vertices are baked into that bone's local frame. Every frame the bone matrix is `bodyTransform * boneFromBody`, and the mesh is drawn with that matrix. Collision shapes are capsules or spheres derived from the bone segment and the mesh radius. They are not the render meshes.
+Each mesh is rigidly weighted to one bone. Vertices are baked into that bone's local frame. Every frame the bone matrix is `bodyTransform * boneFromBody`, and the mesh is drawn with that matrix. Most collision shapes are capsules or spheres. The feet are boxes fitted to those vertices. Debug drawing uses the body pose, `shapeCenter`, and `shapeRotation`, which is the same placement Jolt simulates (`RotatedTranslatedShape` plus a center-of-mass shift back to the body origin). `PhysicsWorld::worldBounds` reads `Body::GetWorldSpaceBounds` so a test can compare that box with the drawn corners.
 
 The viewport is a multisampled framebuffer (4x when the driver allows it) displayed in the docking layout. The default dock puts Hierarchy on the left, the viewport in the center, Inspector on the right, and Simulation / Physics / Diagnostics along the bottom.
 

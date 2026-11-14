@@ -46,6 +46,12 @@ BAL-001 still requires the first second upright. On the flat-sole Normal preset 
 
 On the v0.3.2 Normal pose, BAL-001's first second measures a minimum center-of-mass height of 1.027 m and a maximum tilt of 0.265 rad. EQ-010 measures 30 s. BAL-003 and BAL-004 used to require a fall from 6 N·s, which was true on the heel target. That push is now rejected, and the tests expect the recovery. BAL-005 still requires the 55 N·s push to knock the body down. The comparison table is `docs/M3_2_EXPERIMENTS.md`.
 
+## v0.3.4 standing cases
+
+`STAB-001` through `STAB-015` load Humanoidguy only. They check the skinned import, foot box against the mesh and against Jolt's world bounds, sole level, ankle lock, the mass-weighted center of mass, torque limits, correction signs, a passive fall against an active stand, a repeated 1 s stand, a 55 N·s fall, no support fixture, grab and push, and the 21/20 body count. `mortrauma_tests STAB-LOG` is not a CTest case. It prints the 30 s quiet stand, a motor-hold trial, and four 6 N·s pushes. The numbers are in `docs/STANDING_EXPERIMENTS.md`.
+
+The v0.3.4 quiet stand still completes 30 s. Do not loosen EQ-010 or BAL-001 to claim a longer one. YBOT cases are gone with that character.
+
 ## Grab
 
 GRAB-001 repeats begin and release. GRAB-002 resets during a grab. GRAB-003 grabs with motors active. GRAB-004 grabs with the pelvis fixture. GRAB-005 moves the target quickly. GRAB-006 checks the temporary constraint is gone. GRAB-007 grabs while balance is active. The lock bug they cover is in `docs/GRAB_CRASH_INVESTIGATION.md`.

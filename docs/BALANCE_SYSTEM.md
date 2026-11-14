@@ -76,6 +76,12 @@ The pose and the feedback law now use the ankle ground projection (`feasibleSole
 
 Center of pressure is not measured. The listener does not receive solved impulses. See `docs/COP_AND_LOAD_ESTIMATION.md`.
 
-## v0.3.3 second character
+## v0.3.4 Humanoidguy only
 
-Y-Bot uses this same controller. Character-specific pose fields are `hip_abduction_deg` (default 14, so Humanoidguy is unchanged) and `relax_arms` (default off). Torque files are selected by the character profile. The rig comparison is `docs/YBOT_COMPARISON.md`.
+The v0.3.3 character switch, its rig file, its motor directory, and its arm-drop pose search are gone. The application loads `configurations/humanoidguy.json` and `characters/humanoidguy_rigged.fbx`. An import with no skin bones fails instead of building a rigid stand-in. `hip_abduction_deg` remains and still defaults to 14.
+
+The live balance target is still the ankle projection (`equilibriumReference`, lead 0). The 75/25 heel blend is used only when that flag is off. It is not the Normal pose.
+
+Before the first contact the ankle-moment estimate is 0. It used to treat the horizontal distance from the pelvis to an ankle as a single-foot moment and reported about 196 N·m, which no joint was carrying. Once both feet are down, the estimate is half the weight times the forward arm. On the 30 s trial that is about 5 to 6 N·m, under the 12 N·m cap. The cap was not raised.
+
+While Standing or Recovering, a saturated ankle or hip replaces the "within capacity" line with that fact. The pitch moment can be inside 12 N·m and the twist axis can still sit on the cap. Details and the trial that was reverted are in `docs/STANDING_STABILIZATION.md` and `docs/STANDING_EXPERIMENTS.md`.

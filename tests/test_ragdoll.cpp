@@ -576,8 +576,8 @@ void runEquilibriumTest(const std::string& which);
 void runAllEquilibriumTests();
 void runFootTest(const std::string& which);
 void runAllFootTests();
-void runYbotTest(const std::string& which);
-void runAllYbotTests();
+void runStabTest(const std::string& which);
+void runAllStabTests();
 void recordStandingCsv(const std::string& path);
 void runEquilibriumSweep();
 void runLongStand();
@@ -616,8 +616,8 @@ int main(int argc, char** argv) {
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
-    if (which.rfind("YBOT-", 0) == 0) {
-        runYbotTest(which);
+    if (which.rfind("STAB-", 0) == 0) {
+        runStabTest(which);
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
@@ -721,7 +721,7 @@ int main(int argc, char** argv) {
         runAllFootTests();
         runAllBalanceTests();
         runAllEquilibriumTests();
-        runAllYbotTests();
+        runAllStabTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
         which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&

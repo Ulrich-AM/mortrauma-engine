@@ -139,6 +139,12 @@ BalanceState BalanceEstimator::measure(const PhysicsWorld& world, const Ragdoll&
         const Vec3 fore = sample.position + rotate(sample.rotation, foot.forefootLocal);
         equilibrium = equilibrium + feasibleSolePoint(ankle.anchorChildWorld, heel, fore, equilibriumLeadM);
         ++equilibriumCount;
+        // No planted foot means there is no ankle moment yet. Using the
+        // distance from the pelvis to an ankle made this read ~200 N·m before
+        // the first contact, which is not a torque the joint is carrying.
+        if (groundedFeet <= 0) {
+            continue;
+        }
         const Vec3 offset{state.com.x - ankle.anchorChildWorld.x, 0.f, state.com.z - ankle.anchorChildWorld.z};
         const float forwardArm = std::fabs(dot(offset, state.facing));
         // Two feet share a lateral offset as a force difference. The pitch

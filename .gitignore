@@ -11,5 +11,5 @@ CMakeUserPresets.json
 mortrauma_layout.ini
 package/
 *.zip
-# Supplied segmented character. Not a redistributable Mixamo file.
+# Local copy of the discontinued Y-Bot file. Not part of the Humanoidguy package.
 assets/characters/ybot.fbx

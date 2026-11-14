@@ -14,7 +14,7 @@ v0.3.1 (M3.1) replaces the foot capsules with a flat sole box and levels that so
 
 v0.3.2 (M3.2) moves the standing reference from the heel blend onto the ankles. The same torque limits then hold a 30 s quiet stand. The torso still sways by about 10°, the unloaded feet differ by about 12 mm, and contact impulses are not measured. See `docs/EQUILIBRIUM_ANALYSIS.md`.
 
-v0.3.3 keeps that controller and adds the supplied Y-Bot as a second selectable rig. Humanoidguy's bodies, torque limits, and standing pose are unchanged. The Y-Bot file is a rigid segmented figure, not a skinned Mixamo skeleton, and it is not redistributed. See `docs/YBOT_COMPARISON.md`.
+v0.3.3 added a second selectable rig. v0.3.4 (M3.4 and M3.5) removes it. Humanoidguy is the only loaded character. The foot boxes match the visible meshes and Jolt's bounds. The Normal quiet stand still lasts 30 s, with the ankles saturating and a 6 N·s backward push still able to topple the body. Recovery stepping stays in M4. See `docs/STANDING_STABILIZATION.md`.
 
 ## M4 — Momentum and recovery stepping
 

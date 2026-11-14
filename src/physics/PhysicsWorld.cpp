@@ -838,6 +838,22 @@ ShapeView PhysicsWorld::shapeView(int body) const {
     return view;
 }
 
+bool PhysicsWorld::worldBounds(int body, Vec3& minimum, Vec3& maximum) const {
+    minimum = {};
+    maximum = {};
+    if (!ready_ || body < 0 || body >= int(impl_->bodies.size()) || !impl_->bodies[body].alive) {
+        return false;
+    }
+    JPH::BodyLockRead lock(impl_->system.GetBodyLockInterface(), impl_->bodies[body].id);
+    if (!lock.Succeeded()) {
+        return false;
+    }
+    const JPH::AABox box = lock.GetBody().GetWorldSpaceBounds();
+    minimum = toMt(box.mMin);
+    maximum = toMt(box.mMax);
+    return true;
+}
+
 bool PhysicsWorld::setBodyShape(int body, const BodyCreateInfo& info) {
     if (!ready_ || body < 0 || body >= int(impl_->bodies.size()) || !impl_->bodies[body].alive) {
         Log::error("Shape replacement rejected for a missing body.");

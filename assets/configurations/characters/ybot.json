@@ -1,9 +1,0 @@
-{
-  "id": "ybot",
-  "label": "Y-Bot",
-  "model": "characters/ybot.fbx",
-  "rig": "configurations/ybot.json",
-  "balance_preset": "ybot",
-  "motors": "configurations/motors/ybot",
-  "notes": "Segmented rigid figure supplied as Y_Bot_Base.fbx. The FBX is not in the public package. Copy it to assets/characters/ybot.fbx. Balance uses the same controller as Humanoidguy, with this character's pose and torque files."
-}
