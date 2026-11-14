@@ -321,6 +321,9 @@ void BalanceController::command(const Ragdoll& ragdoll, MotorController& motors)
             delta.y = clampf(ankleLateral, -0.3f, 0.3f);
         } else if (joint.id == "hip_1" || joint.id == "hip_2") {
             delta.z = clampf(hipForward, -0.45f, 0.45f);
+            // Both hips share one facing swing1 axis, so this sign is not a
+            // mirrored abduction. Quiet standing keeps the shared sign.
+            // Weight transfer adds the opposite sign on hip_2 as a step bias.
             delta.y = clampf(hipLateral, -0.35f, 0.35f);
         } else if (joint.id == "spine_stomach" || joint.id == "spine_chest" || joint.id == "spine_neck") {
             const float share = joint.id == "spine_stomach" ? 0.45f : (joint.id == "spine_chest" ? 0.35f : 0.2f);

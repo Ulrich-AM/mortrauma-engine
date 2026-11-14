@@ -16,6 +16,8 @@ v0.3.2 (M3.2) moves the standing reference from the heel blend onto the ankles. 
 
 v0.3.4 removed the second character and remeasured the 30 s stand. v0.4.0 (M4) turns the foot boxes onto the visible sole, about 33° off the old bone-perpendicular face, and keeps the 30 s quiet stand. Weight transfer, a foot lift, and one recovery step are in the Stepping Laboratory. The lift does not yet hold a raised foot, and a recovery step is not reliable. See `docs/FOOT_ALIGNMENT.md` and `docs/M4_EXPERIMENTS.md`.
 
+v0.4.1 (M4.1) corrects the hip swing signs used for a weight shift and moves the center of mass toward either foot. Single-leg support is not established: the swing foot keeps its contacts, and the lift is refused. Recovery stepping is not extended. See `docs/M4_1_EXPERIMENTS.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.

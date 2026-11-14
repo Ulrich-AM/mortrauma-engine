@@ -40,7 +40,7 @@ Jolt 5.3 does not support soft angular limits. Compliance is friction plus body 
 
 v0.3.4 loads that file only. There is no character catalog. Another JSON with the same schema can still be built by `RagdollBuilder`; the application does not offer a second one. The importer requires skin bones.
 
-The foot box is not perpendicular to the foot bone. Its sole normal is the visible underside: the average of the mesh normals that point downward in the bind pose, then the thin axis of the vertices that share that normal. Heel-to-toe stays the bone direction projected onto that plane. The half extents are the bounds of the same vertices on those axes. `StepController` does not write motors itself. It sets a reference offset and joint bias on `BalanceController`, which remains the only caller that builds the motor task.
+The foot box is not perpendicular to the foot bone. Its sole normal is the visible underside: the average of the mesh normals that point downward in the bind pose, then the thin axis of the vertices that share that normal. Heel-to-toe stays the bone direction projected onto that plane. The half extents are the bounds of the same vertices on those axes. `StepController` does not write motors itself. It sets a reference offset and joint bias on `BalanceController`, which remains the only caller that builds the motor task. A weight shift commands opposite hip swing1 signs, because the two hip frames share one facing axis. The swing-foot lift, when the foot has actually unloaded, is a damped least-squares step from the measured sole-height error. It does not replace the balance correction.
 
 ## Rendering
 

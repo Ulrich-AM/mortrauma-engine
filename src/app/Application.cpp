@@ -371,6 +371,7 @@ struct App {
         releaseGrab();
         world.endSupport();
         poseController.cancel();
+        stepping.cancel();
         const StandingPlacement placement = placeStandingPose(world, ragdoll, balance.config());
         if (!placement.ok) {
             poseMessage = placement.error;
@@ -387,6 +388,7 @@ struct App {
         world.clearGrabs();
         grab = -1;
         poseController.cancel();
+        stepping.cancel();
         resetRagdoll(world, ragdoll);
         motors.onSimulationReset(world, ragdoll);
         balance.resetState();
@@ -665,6 +667,36 @@ struct App {
                 const Vec3 mark{balanceState.equilibriumTarget.x, 0.02f, balanceState.equilibriumTarget.z};
                 renderer.drawSphere(mark, 0.025f, {0.2f, 0.85f, 0.95f});
                 renderer.drawLine(balanceState.comProjection, mark, {0.2f, 0.85f, 0.95f});
+            }
+            if (stepping.active() || stepping.phase() == StepPhase::Completed || stepping.phase() == StepPhase::Aborted) {
+                const Vec3 target{stepping.comTarget().x, 0.025f, stepping.comTarget().z};
+                renderer.drawSphere(target, 0.02f, {0.95f, 0.75f, 0.2f});
+                renderer.drawLine(balanceState.comProjection, target, {0.95f, 0.75f, 0.2f});
+                const Vec3 actual = stepping.swingActual();
+                const Vec3 planned = stepping.swingTarget();
+                const Vec3 origin = stepping.swingOrigin();
+                if (length(planned - origin) > 1e-4f || planned.y > origin.y + 0.005f) {
+                    renderer.drawLine(origin, planned, {0.65f, 0.45f, 0.95f});
+                }
+                renderer.drawSphere(planned, 0.015f, {0.75f, 0.45f, 0.95f});
+                renderer.drawLine(actual - Vec3{0.03f, 0.f, 0.f}, actual + Vec3{0.03f, 0.f, 0.f}, {0.95f, 0.4f, 0.35f});
+                renderer.drawLine(actual - Vec3{0.f, 0.f, 0.03f}, actual + Vec3{0.f, 0.f, 0.03f}, {0.95f, 0.4f, 0.35f});
+                const char* stanceId = stepping.supportRight() ? "foot_1" : "foot_2";
+                if (const auto* foot = ragdoll.find(stanceId)) {
+                    const auto sample = world.bodyState(foot->physics);
+                    const Vec3 heel = sample.position + rotate(sample.rotation, foot->heelLocal);
+                    const Vec3 toe = sample.position + rotate(sample.rotation, foot->forefootLocal);
+                    const Vec3 side = normalize(rotate(sample.rotation, cross(foot->soleForwardLocal, foot->soleNormalLocal)));
+                    const float width = 0.04f;
+                    const Vec3 a = heel + side * width;
+                    const Vec3 b = heel - side * width;
+                    const Vec3 c = toe - side * width;
+                    const Vec3 d = toe + side * width;
+                    renderer.drawLine(a, b, {0.95f, 0.8f, 0.25f});
+                    renderer.drawLine(b, c, {0.95f, 0.8f, 0.25f});
+                    renderer.drawLine(c, d, {0.95f, 0.8f, 0.25f});
+                    renderer.drawLine(d, a, {0.95f, 0.8f, 0.25f});
+                }
             }
             if (overlays.showCop && balanceState.copAvailable) {
                 renderer.drawSphere(balanceState.cop + Vec3{0.f, 0.03f, 0.f}, 0.02f, {0.95f, 0.2f, 0.85f});
@@ -1028,59 +1060,81 @@ struct App {
             ImGui::PlotLines(label, values.data(), int(values.size()), 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 48));
         };
         if (ImGui::CollapsingHeader("Stepping Laboratory")) {
-            ImGui::Text("Phase %s", stepPhaseName(stepping.phase()));
+            const auto& balanceState = balance.state();
+            ImGui::Text("State %s", stepPhaseName(stepping.phase()));
+            ImGui::Text("Support %s    swing %s", stepping.supportRight() ? "right (foot_1)" : "left (foot_2)",
+                        stepping.supportRight() ? "left (foot_2)" : "right (foot_1)");
             ImGui::TextWrapped("%s", stepping.note().c_str());
-            float lift = stepping.liftHeight();
-            float distance = stepping.stepDistance();
-            float duration = stepping.phaseDuration();
-            if (ImGui::SliderFloat("Foot lift height", &lift, 0.02f, 0.08f, "%.3f m")) {
-                stepping.setLiftHeight(lift);
+            if (!stepping.failure().empty()) {
+                ImGui::TextWrapped("Failure: %s", stepping.failure().c_str());
             }
-            if (ImGui::SliderFloat("Step distance", &distance, 0.05f, 0.35f, "%.2f m")) {
-                stepping.setStepDistance(distance);
-            }
-            if (ImGui::SliderFloat("Phase duration", &duration, 0.3f, 1.5f, "%.2f s")) {
-                stepping.setPhaseDuration(duration);
-            }
-            ImGui::Text("Support foot %s", stepping.supportRight() ? "right (foot_1)" : "left (foot_2)");
-            if (stepping.phase() != StepPhase::Idle) {
-                ImGui::Text("Step target  %.2f  %.2f", stepping.stepTarget().x, stepping.stepTarget().z);
-            }
-            if (ImGui::Button("Weight to right")) {
-                playing = true;
-                balance.setEnabled(true, motors);
-                stepping.requestTransfer(true);
+            ImGui::TextWrapped("%s", stepping.supportEstimate().c_str());
+            int supportSide = stepping.supportRight() ? 1 : 0;
+            if (ImGui::RadioButton("Left", &supportSide, 0)) {
+                stepping.setSupportRight(false);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Weight to left")) {
-                playing = true;
-                balance.setEnabled(true, motors);
-                stepping.requestTransfer(false);
+            if (ImGui::RadioButton("Right", &supportSide, 1)) {
+                stepping.setSupportRight(true);
             }
-            if (ImGui::Button("Lift left foot")) {
+            const bool supportRight = stepping.supportRight();
+            auto arm = [&]() {
                 playing = true;
                 balance.setEnabled(true, motors);
-                stepping.requestLift(true);
+            };
+            if (ImGui::Button("Test Weight Transfer")) {
+                arm();
+                stepping.requestTransfer(supportRight);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Lift right foot")) {
-                playing = true;
-                balance.setEnabled(true, motors);
-                stepping.requestLift(false);
+            if (ImGui::Button("Test Single-Leg Support")) {
+                arm();
+                stepping.requestSupport(supportRight);
             }
-            if (ImGui::Button("Recovery step")) {
-                playing = true;
-                balance.setEnabled(true, motors);
-                const Vec3 direction = length(balance.state().comVelocity) > 0.05f ? balance.state().comVelocity : balance.state().facing;
-                const bool supportRight = dot(direction, balance.state().right) < 0.f;
-                stepping.requestRecovery(supportRight, direction);
+            if (ImGui::Button("Test Foot Lift")) {
+                arm();
+                stepping.requestLift(supportRight);
             }
             ImGui::SameLine();
-            if (ImGui::Button("Cancel step")) {
-                stepping.cancel();
-                balance.setStepBias({}, {});
+            if (ImGui::Button("Test Foot Lowering")) {
+                arm();
+                stepping.requestLower();
             }
-            ImGui::TextUnformatted("One attempt. A lost stand falls. The feet are not pinned.");
+            if (ImGui::Button("Test Full Lift-and-Return")) {
+                arm();
+                stepping.requestSequence(supportRight);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Abort Experiment")) {
+                stepping.abort();
+            }
+            if (ImGui::Button("Reset to Standing")) {
+                resetToStanding();
+            }
+            ImGui::Text("COM target %.3f %.3f   error %.3f m   speed %.3f m/s", stepping.comTarget().x, stepping.comTarget().z, stepping.comError(),
+                        length(Vec3{balanceState.comVelocity.x, 0.f, balanceState.comVelocity.z}));
+            ImGui::Text("Support margin %.3f m   contacts L %d R %d   saturated %d", stepping.supportMargin(), balanceState.leftPoints, balanceState.rightPoints,
+                        balanceState.saturatedMotors);
+            ImGui::Text("Clearance %.3f m   target %.3f m   height error %.3f m", stepping.swingClearance(), stepping.swingTargetHeight(), stepping.heightError());
+            if (ImGui::CollapsingHeader("Timing")) {
+                float clearance = stepping.liftHeight();
+                float transfer = stepping.transferDuration();
+                float lift = stepping.liftDuration();
+                float hold = stepping.holdDuration();
+                if (ImGui::SliderFloat("Target foot clearance", &clearance, 0.02f, 0.06f, "%.3f m")) {
+                    stepping.setLiftHeight(clearance);
+                }
+                if (ImGui::SliderFloat("Transfer duration", &transfer, 0.8f, 4.f, "%.2f s")) {
+                    stepping.setTransferDuration(transfer);
+                }
+                if (ImGui::SliderFloat("Lift duration", &lift, 0.4f, 2.5f, "%.2f s")) {
+                    stepping.setLiftDuration(lift);
+                }
+                if (ImGui::SliderFloat("Hold duration", &hold, 0.1f, 1.5f, "%.2f s")) {
+                    stepping.setHoldDuration(hold);
+                }
+            }
+            ImGui::TextUnformatted("The feet stay dynamic. A lost stand falls. Contact counts are not loads.");
         }
         if (ImGui::CollapsingHeader("Traces")) {
             plot("COM forward (m)", &BalanceSample::comForward);
@@ -1840,7 +1894,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.0 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.1 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

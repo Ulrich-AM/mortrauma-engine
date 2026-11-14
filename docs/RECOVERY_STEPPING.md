@@ -1,4 +1,8 @@
-# Recovery stepping (v0.4.0)
+# Recovery stepping
+
+v0.4.1 does not extend recovery placement. The Recovery control now runs only the weight shift onto the selected foot and says so. The fixed hip and knee offsets below are the v0.4.0 controller. They are not what v0.4.1 commands. The current states and the height-error lift are in `docs/FOOT_LIFTING.md`.
+
+## v0.4.0 record
 
 One supervisor, `StepController`, owns a single attempt. States are Idle, WeightTransfer, FootLift, Swing, FootPlacement, Reestablish, and Falling. The balance controller keeps the final motor targets. A joint bias with `replace` set drops the balance correction on the swing hip and swing knee and adds flexion on top of the standing reference. The swing ankle is left to the planted-foot rule, so it stops receiving a balance command once that foot leaves the ground. Nothing teleports a body or switches a foot to kinematic.
 
