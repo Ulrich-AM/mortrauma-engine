@@ -249,6 +249,8 @@ public:
     RayHit rayCast(Vec3 origin, Vec3 direction, float maxDistance, int ignoreBody = -1) const;
     std::vector<ContactRecord> contacts() const { return contacts_; }
     ShapeView shapeView(int body) const;
+    // World AABB of the shape Jolt is actually colliding with.
+    bool worldBounds(int body, Vec3& minimum, Vec3& maximum) const;
 
     // Spring grab. A kinematic anchor is tied to the body with a soft
     // positional constraint. Rotation of the grabbed body stays free.

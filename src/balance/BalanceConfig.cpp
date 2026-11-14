@@ -55,10 +55,6 @@ BalanceConfig BalanceConfigLoader::preset(const std::string& name, std::string& 
     config.hipFlexionDeg = numberOr(json, "hip_flexion_deg", config.hipFlexionDeg);
     config.ankleFlexionDeg = numberOr(json, "ankle_flexion_deg", config.ankleFlexionDeg);
     config.hipAbductionDeg = numberOr(json, "hip_abduction_deg", config.hipAbductionDeg);
-    config.armDropDeg = numberOr(json, "arm_drop_deg", config.armDropDeg);
-    if (json.contains("relax_arms") && json["relax_arms"].is_boolean()) {
-        config.relaxArms = json["relax_arms"].get<bool>();
-    }
     config.fallingActivation = numberOr(json, "falling_activation", config.fallingActivation);
     config.fallTiltRad = numberOr(json, "fall_tilt_rad", config.fallTiltRad);
     config.minStateSeconds = numberOr(json, "min_state_seconds", config.minStateSeconds);

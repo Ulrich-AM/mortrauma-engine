@@ -33,11 +33,8 @@ struct BalanceConfig {
     float kneeFlexionDeg = 14.f;
     float hipFlexionDeg = 10.f;
     float ankleFlexionDeg = 0.f;
-    // Lateral hip angle used by the standing pose. 14 matches Humanoidguy.
+    // Lateral hip angle used by the standing pose. 14 is Humanoidguy's stance.
     float hipAbductionDeg = 14.f;
-    // Off leaves the imported arm pose alone. Y-Bot's bind pose is a T-pose.
-    bool relaxArms = false;
-    float armDropDeg = 70.f;
     // Fraction of balance strength kept while falling. 0 is passive.
     float fallingActivation = 0.2f;
     float fallTiltRad = 0.95f;

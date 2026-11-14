@@ -79,8 +79,6 @@ struct App {
     float transitionDuration = 0.6f;
     bool drivePoseJointsOnly = true;
     std::string poseMessage;
-    std::vector<CharacterProfile> characters;
-    int characterIndex = -1;
     struct MotorTrace {
         std::vector<float> targetDeg;
         std::vector<float> measuredDeg;
@@ -165,90 +163,35 @@ struct App {
         return {0.62f + 0.08f * std::sin(t), 0.5f + 0.05f * std::cos(t * 1.3f), 0.42f + 0.04f * std::sin(t * 0.7f)};
     }
 
-    void loadCharacterCatalog() {
-        characters.clear();
-        const char* profiles[] = {"configurations/characters/humanoidguy.json", "configurations/characters/ybot.json"};
-        for (const char* relative : profiles) {
-            const auto path = findAsset(relative);
-            if (path.empty()) {
-                continue;
-            }
-            CharacterProfile profile = loadCharacterProfile(path.string());
-            if (!profile.error.empty()) {
-                Log::error(profile.error);
-                continue;
-            }
-            characters.push_back(std::move(profile));
-        }
-    }
-
-    void uploadMeshes() {
-        for (int gpu : meshGpu) {
-            renderer.destroyMesh(gpu);
-        }
-        meshGpu.clear();
-        meshColor.clear();
-        for (const auto& mesh : model.meshes) {
-            meshGpu.push_back(renderer.createMesh(mesh.vertices, mesh.indices));
-            meshColor.push_back(bodyColor(std::max(mesh.bone, 0)));
-        }
-    }
-
-    bool loadCharacter(int index) {
-        if (index < 0 || index >= int(characters.size())) {
-            poseMessage = "Character selection is outside the catalog.";
+    bool boot() {
+        PhysicsSettings settings;
+        if (!world.initialize(settings)) {
             return false;
         }
-        playing = false;
-        releaseGrab();
-        world.clearGrabs();
-        poseController.cancel();
-        balance.setEnabled(false, motors);
-        motors.clearMotorTask();
-        destroyRagdoll(world, ragdoll);
-        selectedBody = -1;
-        selectedJoint = -1;
-        selection = SelectionKind::None;
-        trace.clear();
-        accumulator = 0.f;
-        capsuleFeet = false;
-
-        const CharacterProfile& profile = characters[index];
-        const auto configPath = findAsset(profile.rig);
-        const auto modelPath = findAsset(profile.model);
-        if (configPath.empty()) {
-            poseMessage = "Rig configuration for " + profile.label + " was not found.";
-            return false;
-        }
+        gravity = settings.gravity;
+        velocityIterations = settings.velocityIterations;
+        positionIterations = settings.positionIterations;
+        const auto configPath = findAsset("configurations/humanoidguy.json");
+        const auto modelPath = findAsset("characters/humanoidguy_rigged.fbx");
+        const auto presetPath = findAsset("configurations/presets/natural.json");
+        std::string presetError;
+        preset = loadJointPreset(presetPath.string(), presetError);
+        defaultPreset = preset;
         config = loadCharacterConfig(configPath.string());
-        if (!config.error.empty()) {
-            poseMessage = config.error;
-            return false;
-        }
-        if (modelPath.empty() || !std::filesystem::exists(modelPath)) {
-            if (profile.id == "humanoidguy") {
-                Log::error("humanoidguy_rigged.fbx was not found. Using the procedural stand-in.");
-                model = makeProceduralHumanoid();
-            } else {
-                poseMessage = profile.label + " model was not found at " + profile.model +
-                              ". Place the supplied FBX there. It is not included in the public package.";
-                Log::error(poseMessage);
-                return false;
-            }
+        if (modelPath.empty()) {
+            Log::error("humanoidguy_rigged.fbx was not found next to the executable or in the source tree.");
+            model = makeProceduralHumanoid();
         } else {
             model = ModelLoader::load(modelPath.string());
             if (!model.report.ok) {
-                if (profile.id == "humanoidguy") {
-                    model = makeProceduralHumanoid();
-                } else {
-                    poseMessage = model.report.error.empty() ? profile.label + " failed to import." : model.report.error;
-                    return false;
-                }
+                model = makeProceduralHumanoid();
             }
+        }
+        if (!config.error.empty()) {
+            return false;
         }
         ragdoll = RagdollBuilder::build(world, config, model, preset);
         if (!ragdoll.ok) {
-            poseMessage = ragdoll.error;
             return false;
         }
         float lowest = 1e9f;
@@ -266,71 +209,30 @@ struct App {
             }
         }
         std::string balanceError;
-        if (!balance.loadPreset(profile.balancePreset, balanceError)) {
+        if (!balance.loadPreset("normal", balanceError)) {
             Log::error(balanceError);
-            poseMessage = balanceError;
-            return false;
         }
         if (!motors.bind(world, ragdoll)) {
-            poseMessage = "Motors could not bind to " + profile.label + ".";
             return false;
         }
-        motors.loadProfilesFrom(profile.motors);
-        motors.restoreDefaults();
+        motors.loadDefaultProfiles();
         poseLibrary.rebuild(world, ragdoll);
-        if (profile.id == "humanoidguy") {
-            const auto imported = poseLibrary.importDefaultMixamo(world, ragdoll);
-            if (imported.fileFound && imported.ok) {
-                std::string saveError;
-                const auto saved = std::filesystem::path(imported.sourcePath).parent_path() / "mixamo_idle.json";
-                poseLibrary.savePose(imported.pose, saved.string(), saveError);
-                poseMessage = "Mixamo idle retargeted. " + std::to_string(imported.pose.unmapped.size()) + " joints kept the Humanoidguy reference.";
-            } else if (!imported.fileFound) {
-                poseMessage = "No Mixamo file found. Procedural poses only.";
-            } else {
-                poseMessage = imported.error;
-            }
+        const auto imported = poseLibrary.importDefaultMixamo(world, ragdoll);
+        if (imported.fileFound && imported.ok) {
+            std::string saveError;
+            const auto saved = std::filesystem::path(imported.sourcePath).parent_path() / "mixamo_idle.json";
+            poseLibrary.savePose(imported.pose, saved.string(), saveError);
+            poseMessage = "Mixamo idle retargeted. " + std::to_string(imported.pose.unmapped.size()) + " joints kept the Humanoidguy reference.";
+        } else if (!imported.fileFound) {
+            poseMessage = "No Mixamo file found. Procedural poses only.";
         } else {
-            poseMessage = profile.label + " loaded. " + profile.notes;
-        }
-        characterIndex = index;
-        uploadMeshes();
-        balance.resetState();
-        return true;
-    }
-
-    bool switchCharacter(int index) {
-        if (index == characterIndex && ragdoll.ok) {
-            return true;
-        }
-        const int previous = characterIndex;
-        if (loadCharacter(index)) {
-            return true;
-        }
-        const std::string failure = poseMessage;
-        if (previous >= 0 && previous != index && loadCharacter(previous)) {
-            poseMessage = failure + " Kept " + characters[characterIndex].label + ".";
-        }
-        return false;
-    }
-
-    bool boot() {
-        PhysicsSettings settings;
-        if (!world.initialize(settings)) {
-            return false;
-        }
-        gravity = settings.gravity;
-        velocityIterations = settings.velocityIterations;
-        positionIterations = settings.positionIterations;
-        const auto presetPath = findAsset("configurations/presets/natural.json");
-        std::string presetError;
-        preset = loadJointPreset(presetPath.string(), presetError);
-        defaultPreset = preset;
-        loadCharacterCatalog();
-        if (characters.empty() || !loadCharacter(0)) {
-            return false;
+            poseMessage = imported.error;
         }
         loadEnvironment();
+        for (const auto& mesh : model.meshes) {
+            meshGpu.push_back(renderer.createMesh(mesh.vertices, mesh.indices));
+            meshColor.push_back(bodyColor(std::max(mesh.bone, 0)));
+        }
         return true;
     }
 
@@ -570,7 +472,8 @@ struct App {
                               "," + std::to_string(s.comToEquilibrium) + "," + std::to_string(s.coplanarityM) + "," +
                               std::to_string(s.estimatedAnkleMoment) + "," + std::to_string(s.ankleEffort) + "," + std::to_string(s.hipEffort) + "," +
                               std::to_string(s.saturatedMotors) + "," + std::to_string(s.margin) + "," + balancePhaseName(s.phase) + "," +
-                              (s.copAvailable ? "1" : "0");
+                              (s.copAvailable ? "1" : "0") + "," + std::to_string(s.leftHeel) + "," + std::to_string(s.leftFore) + "," +
+                              std::to_string(s.rightHeel) + "," + std::to_string(s.rightFore);
             trialRows.push_back(line);
         }
         ++physicsStepsThisWindow;
@@ -1044,7 +947,7 @@ struct App {
                 if (recordTrial) {
                     trialRows.clear();
                     trialRows.push_back(
-                        "t,com_x,com_y,com_z,com_vx,com_vz,tilt,eq_x,eq_z,com_to_eq,coplanar,pitch_moment,ankle,hip,saturated,margin,phase,cop");
+                        "t,com_x,com_y,com_z,com_vx,com_vz,tilt,eq_x,eq_z,com_to_eq,coplanar,pitch_moment,ankle,hip,saturated,margin,phase,cop,left_heel,left_fore,right_heel,right_fore");
                 }
             }
             ImGui::SameLine();
@@ -1083,12 +986,29 @@ struct App {
             }
             ImGui::PlotLines(label, values.data(), int(values.size()), 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 48));
         };
-        plot("COM forward (m)", &BalanceSample::comForward);
-        plot("COM speed (m/s)", &BalanceSample::comSpeed);
-        plot("Torso tilt (rad)", &BalanceSample::torsoTilt);
-        plot("Ankle effort (N·m)", &BalanceSample::ankleEffort);
-        plot("Hip effort (N·m)", &BalanceSample::hipEffort);
-        plot("State", &BalanceSample::phase);
+        if (ImGui::CollapsingHeader("Traces")) {
+            plot("COM forward (m)", &BalanceSample::comForward);
+            plot("COM speed (m/s)", &BalanceSample::comSpeed);
+            plot("Torso tilt (rad)", &BalanceSample::torsoTilt);
+            plot("Ankle effort (N·m)", &BalanceSample::ankleEffort);
+            plot("Hip effort (N·m)", &BalanceSample::hipEffort);
+            plot("State", &BalanceSample::phase);
+        }
+        int ankleSaturated = 0;
+        int hipSaturated = 0;
+        for (const auto& joint : ragdoll.joints) {
+            const auto sample = world.jointState(joint.physics);
+            if (!sample.motorSaturated) {
+                continue;
+            }
+            if (joint.id.rfind("ankle_", 0) == 0) {
+                ++ankleSaturated;
+            }
+            if (joint.id.rfind("hip_", 0) == 0) {
+                ++hipSaturated;
+            }
+        }
+        ImGui::Text("Ankle motors saturated %d    hip motors saturated %d", ankleSaturated, hipSaturated);
         ImGui::Separator();
         ImGui::TextUnformatted("Known impulses. The mouse Push tool is unchanged.");
         ImGui::SliderFloat("Impulse (N·s)", &balanceImpulse, 1.f, 80.f);
@@ -1617,34 +1537,6 @@ struct App {
         }
         ImGui::End();
 
-        ImGui::Begin("Character");
-        if (characters.empty()) {
-            ImGui::TextUnformatted("No character profiles were found.");
-        } else {
-            const char* current = characters[std::clamp(characterIndex, 0, int(characters.size()) - 1)].label.c_str();
-            if (ImGui::BeginCombo("Character", current)) {
-                for (int i = 0; i < int(characters.size()); ++i) {
-                    const bool selected = i == characterIndex;
-                    if (ImGui::Selectable(characters[i].label.c_str(), selected)) {
-                        switchCharacter(i);
-                    }
-                    if (selected) {
-                        ImGui::SetItemDefaultFocus();
-                    }
-                }
-                ImGui::EndCombo();
-            }
-            if (characterIndex >= 0 && characterIndex < int(characters.size()) && !characters[characterIndex].notes.empty()) {
-                ImGui::TextWrapped("%s", characters[characterIndex].notes.c_str());
-            }
-            if (ImGui::Button("Reset to standing pose")) {
-                playing = false;
-                resetToStanding();
-            }
-            ImGui::TextUnformatted("One character is in the scene. Switching pauses, drops grabs, and rebuilds the ragdoll.");
-        }
-        ImGui::End();
-
         ImGui::Begin("Simulation");
         if (ImGui::Button(playing ? "Pause" : "Play")) {
             if (playing) {
@@ -1852,7 +1744,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.3 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.4 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

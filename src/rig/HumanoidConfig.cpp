@@ -121,36 +121,6 @@ CharacterConfig loadCharacterConfig(const std::string& path) {
     return config;
 }
 
-CharacterProfile loadCharacterProfile(const std::string& path) {
-    CharacterProfile profile;
-    std::ifstream input(path);
-    if (!input) {
-        profile.error = "Could not open character profile: " + path;
-        Log::error(profile.error);
-        return profile;
-    }
-    try {
-        nlohmann::json json;
-        input >> json;
-        profile.id = json.value("id", "");
-        profile.label = json.value("label", profile.id);
-        profile.model = json.value("model", "");
-        profile.rig = json.value("rig", "");
-        profile.balancePreset = json.value("balance_preset", profile.balancePreset);
-        profile.motors = json.value("motors", profile.motors);
-        profile.notes = json.value("notes", "");
-    } catch (const std::exception& exception) {
-        profile.error = std::string("Invalid character profile: ") + exception.what();
-        Log::error(profile.error);
-        return profile;
-    }
-    if (profile.id.empty() || profile.model.empty() || profile.rig.empty()) {
-        profile.error = "Character profile is missing an id, model, or rig.";
-        Log::error(profile.error);
-    }
-    return profile;
-}
-
 JointPreset loadJointPreset(const std::string& path, std::string& error) {
     JointPreset preset;
     std::ifstream input(path);

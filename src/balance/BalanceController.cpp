@@ -263,6 +263,9 @@ void BalanceController::observe(const PhysicsWorld& world, const Ragdoll& ragdol
         measured.instability = "falling";
     } else if (measured.estimatedAnkleMoment > 12.f) {
         measured.instability = "pitch moment above 12 N·m; hips carry the residual";
+    } else if (measured.saturatedMotors > 0 &&
+               (measured.phase == BalancePhase::Standing || measured.phase == BalancePhase::Recovering)) {
+        measured.instability = "standing; an ankle or hip motor is saturated, pitch moment is within 12 N·m";
     }
     state_ = measured;
     pushHistory();
@@ -338,8 +341,6 @@ void BalanceController::command(const Ragdoll& ragdoll, MotorController& motors)
                                    joint.id == "hip_root_1" || joint.id == "hip_root_2" || joint.id == "spine_stomach" ||
                                    joint.id == "spine_chest" || joint.id == "spine_neck";
         const bool ankle = joint.id == "ankle_1" || joint.id == "ankle_2";
-        // Ankles and arms stay compliant. A high bandwidth on a 12 N·m ankle
-        // saturates against the floor and shoves the whole body.
         // Ankles and arms stay compliant. A high bandwidth on a 12 N·m ankle
         // saturates against the floor and shoves the whole body.
         entry.frequencyHz = weightBearing ? config_.motorFrequencyHz : (ankle ? std::min(config_.motorFrequencyHz, 40.f) : 4.f);

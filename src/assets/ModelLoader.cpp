@@ -6,9 +6,7 @@
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
 
-#include <algorithm>
 #include <cmath>
-#include <cstdint>
 #include <unordered_map>
 
 namespace mt {
@@ -39,7 +37,6 @@ struct NodeWorld {
     std::string name;
     aiMatrix4x4 world;
     int parent = -1;
-    std::vector<unsigned> meshes;
 };
 
 void walk(const aiNode* node, const aiMatrix4x4& parentWorld, int parentIndex, std::vector<NodeWorld>& nodes) {
@@ -50,7 +47,6 @@ void walk(const aiNode* node, const aiMatrix4x4& parentWorld, int parentIndex, s
     // final matrix is converted.
     record.world = parentWorld * node->mTransformation;
     record.parent = parentIndex;
-    record.meshes.assign(node->mMeshes, node->mMeshes + node->mNumMeshes);
     const int index = int(nodes.size());
     nodes.push_back(record);
     for (unsigned c = 0; c < node->mNumChildren; ++c) {
@@ -118,200 +114,6 @@ void addCapsule(MeshPart& part, float radius, float halfLength, int segments) {
     }
 }
 
-bool ancestorNamed(const std::vector<NodeWorld>& nodes, int index, const std::string& name) {
-    for (int parent = index; parent >= 0; parent = nodes[parent].parent) {
-        if (nodes[parent].name == name) {
-            return true;
-        }
-    }
-    return false;
-}
-
-// Segmented figures such as the supplied Y-Bot have one mesh per limb and no
-// skin weights. Joint-marker spheres are kept as pivot bones only. Finger
-// meshes are stored on the palm so the hand stays one rigid body.
-bool importRigidMeshes(const aiScene* scene, const std::vector<NodeWorld>& nodes, ImportedModel& model) {
-    float extent = 0.f;
-    for (const auto& node : nodes) {
-        if (node.meshes.empty() || ancestorNamed(nodes, int(&node - nodes.data()), "Esferas")) {
-            continue;
-        }
-        const Mat4 world = fromAi(node.world);
-        for (unsigned meshIndex : node.meshes) {
-            const aiMesh* mesh = scene->mMeshes[meshIndex];
-            for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
-                const Vec3 point = transformPoint(world, Vec3{mesh->mVertices[v].x, mesh->mVertices[v].y, mesh->mVertices[v].z});
-                extent = std::max(extent, std::max(std::fabs(point.x), std::max(std::fabs(point.y), std::fabs(point.z))));
-            }
-        }
-    }
-    const float scale = extent > 20.f ? 0.01f : 1.f;
-    model.report.unitScale = scale;
-    model.report.upAxis = "Y";
-    auto convertPoint = [&](Vec3 point) { return point * scale; };
-
-    auto visualHost = [&](int nodeIndex) {
-        if (ancestorNamed(nodes, nodeIndex, "Esferas")) {
-            return -1;
-        }
-        // Finger segments hang beside the palm, not under it. One hand body
-        // drives the palm and every mesh in that hand.
-        int hand = -1;
-        for (int parent = nodeIndex; parent >= 0; parent = nodes[parent].parent) {
-            if (nodes[parent].name == "Mano" || nodes[parent].name == "Mano_2") {
-                hand = parent;
-                break;
-            }
-        }
-        if (hand >= 0) {
-            for (int candidate = 0; candidate < int(nodes.size()); ++candidate) {
-                if (nodes[candidate].name != "Palma" && nodes[candidate].name != "Palma_2") {
-                    continue;
-                }
-                for (int parent = candidate; parent >= 0; parent = nodes[parent].parent) {
-                    if (parent == hand) {
-                        return candidate;
-                    }
-                }
-            }
-        }
-        return nodeIndex;
-    };
-
-    std::unordered_map<int, int> boneOfNode;
-    auto addBone = [&](int nodeIndex, Vec3 position) {
-        if (boneOfNode.count(nodeIndex) != 0) {
-            return boneOfNode[nodeIndex];
-        }
-        Bone bone;
-        bone.name = nodes[nodeIndex].name;
-        bone.bindPosition = position;
-        bone.bindRotation = Quat::identity();
-        bone.bindWorld = Mat4::fromRotationTranslation(bone.bindRotation, bone.bindPosition);
-        const int index = int(model.bones.size());
-        boneOfNode.emplace(nodeIndex, index);
-        model.bones.push_back(bone);
-        return index;
-    };
-
-    for (int nodeIndex = 0; nodeIndex < int(nodes.size()); ++nodeIndex) {
-        const auto& node = nodes[nodeIndex];
-        if (node.meshes.empty() || !ancestorNamed(nodes, nodeIndex, "Esferas")) {
-            continue;
-        }
-        if (node.name.rfind("Alpha_Surface", 0) == 0) {
-            continue;
-        }
-        const Mat4 world = fromAi(node.world);
-        Vec3 sum{};
-        int count = 0;
-        for (unsigned meshIndex : node.meshes) {
-            const aiMesh* mesh = scene->mMeshes[meshIndex];
-            for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
-                sum = sum + convertPoint(transformPoint(world, Vec3{mesh->mVertices[v].x, mesh->mVertices[v].y, mesh->mVertices[v].z}));
-                ++count;
-            }
-        }
-        if (count > 0) {
-            addBone(nodeIndex, sum * (1.f / float(count)));
-        }
-    }
-
-    std::unordered_map<int, std::vector<std::pair<int, unsigned>>> grouped;
-    for (int nodeIndex = 0; nodeIndex < int(nodes.size()); ++nodeIndex) {
-        const int host = visualHost(nodeIndex);
-        if (host < 0) {
-            continue;
-        }
-        for (unsigned meshIndex : nodes[nodeIndex].meshes) {
-            grouped[host].push_back({nodeIndex, meshIndex});
-        }
-    }
-
-    for (const auto& group : grouped) {
-        const int host = group.first;
-        Vec3 sum{};
-        int count = 0;
-        for (const auto& item : group.second) {
-            const Mat4 world = fromAi(nodes[item.first].world);
-            const aiMesh* mesh = scene->mMeshes[item.second];
-            for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
-                sum = sum + convertPoint(transformPoint(world, Vec3{mesh->mVertices[v].x, mesh->mVertices[v].y, mesh->mVertices[v].z}));
-                ++count;
-            }
-        }
-        if (count == 0) {
-            continue;
-        }
-        const Vec3 origin = sum * (1.f / float(count));
-        const int bone = addBone(host, origin);
-        for (const auto& item : group.second) {
-            const Mat4 world = fromAi(nodes[item.first].world);
-            const aiMesh* mesh = scene->mMeshes[item.second];
-            MeshPart part;
-            part.name = mesh->mName.C_Str();
-            part.bone = bone;
-            part.boneName = model.bones[bone].name;
-            part.vertices.reserve(mesh->mNumVertices);
-            for (unsigned v = 0; v < mesh->mNumVertices; ++v) {
-                const Vec3 filePosition = convertPoint(transformPoint(world, Vec3{mesh->mVertices[v].x, mesh->mVertices[v].y, mesh->mVertices[v].z}));
-                Vec3 fileNormal{0.f, 1.f, 0.f};
-                if (mesh->mNormals != nullptr) {
-                    fileNormal = normalize(transformVector(world, Vec3{mesh->mNormals[v].x, mesh->mNormals[v].y, mesh->mNormals[v].z}));
-                }
-                SkinnedVertex vertex;
-                vertex.position = filePosition - origin;
-                vertex.normal = fileNormal;
-                vertex.bone = bone;
-                part.vertices.push_back(vertex);
-            }
-            for (unsigned f = 0; f < mesh->mNumFaces; ++f) {
-                const aiFace& face = mesh->mFaces[f];
-                if (face.mNumIndices != 3) {
-                    continue;
-                }
-                part.indices.push_back(face.mIndices[0]);
-                part.indices.push_back(face.mIndices[1]);
-                part.indices.push_back(face.mIndices[2]);
-            }
-            model.report.vertexCount += int(part.vertices.size());
-            ++model.report.rigidMeshes;
-            model.meshes.push_back(std::move(part));
-        }
-    }
-
-    for (auto& bone : model.bones) {
-        const auto node = std::find_if(nodes.begin(), nodes.end(), [&](const NodeWorld& item) { return item.name == bone.name; });
-        if (node == nodes.end()) {
-            continue;
-        }
-        int parent = node->parent;
-        while (parent >= 0) {
-            const auto mapped = boneOfNode.find(parent);
-            if (mapped != boneOfNode.end()) {
-                bone.parent = mapped->second;
-                break;
-            }
-            parent = nodes[parent].parent;
-        }
-    }
-
-    // The laboratory's standing pose and foot facing use -Z as forward, matching
-    // Humanoidguy. This file's toes point +Z, so the whole rigid character is
-    // yawed 180 degrees. Vertices stay in the bone frame.
-    const int ankle = model.findBone("Tobillo");
-    const int toes = model.findBone("Dedos_3");
-    if (ankle >= 0 && toes >= 0 && model.bones[toes].bindPosition.z > model.bones[ankle].bindPosition.z) {
-        const Quat yaw = quatAxisAngle(Vec3{0.f, 1.f, 0.f}, kPi);
-        for (auto& bone : model.bones) {
-            bone.bindPosition = rotate(yaw, bone.bindPosition);
-            bone.bindRotation = yaw;
-            bone.bindWorld = Mat4::fromRotationTranslation(bone.bindRotation, bone.bindPosition);
-        }
-        model.report.warnings.push_back("Rigid character was yawed 180 degrees so the toes face -Z, the same laboratory forward as Humanoidguy.");
-    }
-    return !model.bones.empty() && !model.meshes.empty();
-}
 
 }  // namespace
 
@@ -424,19 +226,14 @@ ImportedModel ModelLoader::load(const std::string& path) {
         }
     }
 
-    const bool rigid = model.bones.empty() && importRigidMeshes(scene, nodes, model);
     if (model.bones.empty()) {
         model.report.error = "Import contained no skinned bones: " + path;
         Log::error(model.report.error);
         return model;
     }
-    if (!rigid && !foundPelvis) {
+    if (!foundPelvis) {
         model.report.warnings.push_back("Pelvis bone was not found while detecting units.");
     }
-    if (rigid) {
-        // Meshes were stored with the rigid segments. The skinned path below
-        // would discard them for having no bone weights.
-    } else {
 
     // The node globals in this file are rotated 180 degrees around Y relative to
     // the skinned vertices (the rig root's 180 degree roll after the axis
@@ -582,7 +379,6 @@ ImportedModel ModelLoader::load(const std::string& path) {
         }
         model.report.vertexCount += int(part.vertices.size());
         model.meshes.push_back(std::move(part));
-    }
     }
 
     float lowest = 1e9f;
