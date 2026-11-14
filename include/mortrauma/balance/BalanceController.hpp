@@ -52,6 +52,11 @@ public:
     // Applied on the next command. The offset moves the tracked point; it does
     // not pin a foot. Cleared by passing an empty bias and a zero offset.
     void setStepBias(Vec3 referenceOffset, std::unordered_map<std::string, JointBias> bias);
+    // 0 keeps the two-foot law. 1 corrects only the right leg, 2 only the left.
+    // The swing hip and knee stay on the placed reference. Hip 2 uses the
+    // mirrored swing1 sign from v0.4.1.
+    void setStanceLeg(int stanceLeg) { stanceLeg_ = stanceLeg; }
+    int stanceLeg() const { return stanceLeg_; }
 
     const BalanceState& state() const { return state_; }
     BalanceDiagnostics& diagnostics() { return diagnostics_; }
@@ -75,6 +80,7 @@ private:
     bool fellLatch_ = false;
     float stoodSeconds_ = 0.f;
     Vec3 stepOffset_{};
+    int stanceLeg_ = 0;
     std::unordered_map<std::string, JointBias> stepBias_;
 };
 

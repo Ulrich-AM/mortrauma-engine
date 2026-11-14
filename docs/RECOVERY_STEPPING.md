@@ -1,5 +1,7 @@
 # Recovery stepping
 
+v0.4.3 does not extend recovery placement. The single-leg reset is not a step. See `docs/SINGLE_LEG_FEASIBILITY.md`.
+
 v0.4.2 does not extend recovery placement either. Unloading is a separate state and is documented in `docs/ACTIVE_FOOT_UNLOADING.md`.
 
 v0.4.1 does not extend recovery placement. The Recovery control now runs only the weight shift onto the selected foot and says so. The fixed hip and knee offsets below are the v0.4.0 controller. They are not what v0.4.1 commands. The current states and the height-error lift are in `docs/FOOT_LIFTING.md`.

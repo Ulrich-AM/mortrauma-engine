@@ -1,6 +1,8 @@
 # Foot lifting
 
-v0.4.2 does not start this lift until the unloading phase has seen the sole rise by 4 mm while the stance foot is still holding the torso. That rise was not measured. The Jacobian below is unchanged for a lift that does get there. The unloading trials are in `docs/ACTIVE_FOOT_UNLOADING.md`.
+v0.4.3 does not add a dynamic lift. The pre-positioned right-leg pose starts with the other foot clear, and that clearance is part of the reset, not a step. The motors lose the pose in about 0.6 s. See `docs/SINGLE_LEG_FEASIBILITY.md`.
+
+v0.4.2 does not start a lift from two-foot standing until the sole has risen by 4 mm while the stance foot is still holding the torso. That rise was not measured. The Jacobian below is unchanged. The unloading trials are in `docs/ACTIVE_FOOT_UNLOADING.md`.
 
 # Foot lifting (v0.4.1)
 

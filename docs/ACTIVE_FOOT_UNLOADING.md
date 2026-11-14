@@ -36,3 +36,5 @@ The kept command is the largest shortening that did not take the center of mass 
 During double support the center of mass moves about 5 cm toward the selected foot. That foot is still about 20 cm from the center of mass. The full body weight at a 20 cm arm is about 150 N·m. The hip limit is 50 N·m, which can balance the body only about 6 cm from the ankle. The feasible single-leg region does not overlap the posture the double-support shift can hold.
 
 Flexing the swing leg while it is a load-bearing contact does not peel the sole off the floor. The floor reaction absorbs the motion until the pelvis tips. Torque limits and friction were not increased.
+
+v0.4.3 did not repeat those flexion trials. It asked a different question: whether any pose, placed before the simulation, puts the center of mass over one ankle inside the joint torque limits. That result is in `docs/SINGLE_LEG_FEASIBILITY.md`.
