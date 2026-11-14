@@ -1,0 +1,10 @@
+{
+  "floor": {"half_extents": [15.0, 0.1, 15.0], "center": [0.0, -0.1, 0.0]},
+  "walls": [
+    {"name": "Wall Z", "half_extents": [4.0, 1.5, 0.12], "center": [0.0, 1.5, -6.0]},
+    {"name": "Wall X", "half_extents": [0.12, 1.5, 4.0], "center": [-6.0, 1.5, 0.0]}
+  ],
+  "cube": {"half_extents": [0.2, 0.2, 0.2], "center": [1.3, 0.45, 1.1], "mass": 8.0},
+  "platform": {"half_extents": [0.8, 0.08, 0.8], "center": [2.4, 0.55, -1.6]},
+  "ramp": {"half_extents": [1.1, 0.06, 0.45], "center": [-2.2, 0.35, 2.2], "pitch_deg": -18.0}
+}

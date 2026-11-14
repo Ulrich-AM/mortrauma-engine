@@ -1,0 +1,8 @@
+{
+  "name": "Loose",
+  "linear_damping": 0.02,
+  "angular_damping": 0.05,
+  "angular_friction": 0.4,
+  "limit_scale": 1.15,
+  "note": "Passive. Less resistance, slightly wider limits. Not a balance controller."
+}

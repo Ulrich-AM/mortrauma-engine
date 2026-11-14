@@ -1,0 +1,8 @@
+{
+  "name": "Natural",
+  "linear_damping": 0.08,
+  "angular_damping": 0.18,
+  "angular_friction": 2.0,
+  "limit_scale": 1.0,
+  "note": "Passive default. Anatomical limits with moderate friction and damping."
+}

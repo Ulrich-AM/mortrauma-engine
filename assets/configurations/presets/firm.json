@@ -1,0 +1,8 @@
+{
+  "name": "Firm",
+  "linear_damping": 0.15,
+  "angular_damping": 0.35,
+  "angular_friction": 8.0,
+  "limit_scale": 0.8,
+  "note": "Passive. Higher resistance and tighter limits for stress checks."
+}
