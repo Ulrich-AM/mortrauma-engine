@@ -5,6 +5,7 @@
 #include "mortrauma/core/Paths.hpp"
 #include "mortrauma/balance/BalanceController.hpp"
 #include "mortrauma/balance/StandingPose.hpp"
+#include "mortrauma/balance/StepController.hpp"
 #include "mortrauma/motors/MotorController.hpp"
 #include "mortrauma/motors/PoseController.hpp"
 #include "mortrauma/poses/PoseLibrary.hpp"
@@ -74,6 +75,7 @@ struct App {
     MotorController motors;
     PoseController poseController;
     BalanceController balance;
+    StepController stepping;
     PoseLibrary poseLibrary;
     std::string motorJoint = "elbow_1";
     float transitionDuration = 0.6f;
@@ -458,6 +460,7 @@ struct App {
         }
         motors.updateRelaxation(dt);
         balance.observe(world, ragdoll, dt);
+        stepping.update(dt, world, balance.state(), ragdoll, balance);
         balance.command(ragdoll, motors);
         motors.apply(world, ragdoll);
         if (!world.step(dt, collisionSteps)) {
@@ -689,8 +692,46 @@ struct App {
                     }
                     if (overlays.showSoleFrame) {
                         const Vec3 origin = (heel + toe) * 0.5f;
-                        renderer.drawLine(origin, origin + up * 0.12f, {0.9f, 0.9f, 0.95f});
+                        renderer.drawLine(origin, origin + up * 0.16f, {0.2f, 0.85f, 0.95f});
                         renderer.drawLine(heel, toe, {0.85f, 0.7f, 0.3f});
+                        const Vec3 bodyOrigin = sample.position;
+                        renderer.drawLine(bodyOrigin, bodyOrigin + rotate(sample.rotation, Vec3{0.08f, 0.f, 0.f}), {0.9f, 0.25f, 0.25f});
+                        renderer.drawLine(bodyOrigin, bodyOrigin + rotate(sample.rotation, Vec3{0.f, 0.08f, 0.f}), {0.25f, 0.85f, 0.3f});
+                        renderer.drawLine(bodyOrigin, bodyOrigin + rotate(sample.rotation, Vec3{0.f, 0.f, 0.08f}), {0.3f, 0.45f, 0.95f});
+                        if (foot->collider == BodyCreateInfo::Shape::Box) {
+                            const auto viewShape = world.shapeView(foot->physics);
+                            const Vec3 boxCenter = viewShape.position + rotate(viewShape.rotation, viewShape.centerOffset);
+                            const Quat boxOrient = normalize(mul(viewShape.rotation, viewShape.shapeRotation));
+                            renderer.drawLine(boxCenter, boxCenter + rotate(boxOrient, Vec3{0.f, 0.f, 0.12f}), {0.95f, 0.55f, 0.15f});
+                        }
+                        std::vector<Vec3> solePoints;
+                        const PosePalette palette = posePalette(world, ragdoll, model);
+                        for (const auto& mesh : model.meshes) {
+                            bool owned = false;
+                            for (int bone : foot->bones) {
+                                owned = owned || mesh.bone == bone;
+                            }
+                            if (!owned || mesh.bone < 0 || mesh.bone >= int(palette.boneWorld.size())) {
+                                continue;
+                            }
+                            for (const auto& vertex : mesh.vertices) {
+                                solePoints.push_back(transformPoint(palette.boneWorld[mesh.bone], vertex.position));
+                            }
+                        }
+                        std::vector<Vec3> lowest;
+                        if (solePoints.size() > 20) {
+                            std::sort(solePoints.begin(), solePoints.end(), [](Vec3 a, Vec3 b) { return a.y < b.y; });
+                            const size_t count = std::max<size_t>(12, solePoints.size() / 8);
+                            lowest.assign(solePoints.begin(), solePoints.begin() + int(count));
+                            Vec3 visual{};
+                            if (fitThinNormal(lowest, visual)) {
+                                if (visual.y < 0.f) {
+                                    visual = -visual;
+                                }
+                                renderer.drawLine(origin, origin + visual * 0.16f, {0.95f, 0.2f, 0.75f});
+                            }
+                        }
+                        renderer.drawLine(heel, heel + Vec3{0.f, 0.12f, 0.f}, {0.6f, 0.95f, 0.6f});
                     }
                     if (overlays.showSolePlane && foot->collider == BodyCreateInfo::Shape::Box) {
                         const float halfWidth = foot->boxHalfExtents.x;
@@ -986,6 +1027,61 @@ struct App {
             }
             ImGui::PlotLines(label, values.data(), int(values.size()), 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0, 48));
         };
+        if (ImGui::CollapsingHeader("Stepping Laboratory")) {
+            ImGui::Text("Phase %s", stepPhaseName(stepping.phase()));
+            ImGui::TextWrapped("%s", stepping.note().c_str());
+            float lift = stepping.liftHeight();
+            float distance = stepping.stepDistance();
+            float duration = stepping.phaseDuration();
+            if (ImGui::SliderFloat("Foot lift height", &lift, 0.02f, 0.08f, "%.3f m")) {
+                stepping.setLiftHeight(lift);
+            }
+            if (ImGui::SliderFloat("Step distance", &distance, 0.05f, 0.35f, "%.2f m")) {
+                stepping.setStepDistance(distance);
+            }
+            if (ImGui::SliderFloat("Phase duration", &duration, 0.3f, 1.5f, "%.2f s")) {
+                stepping.setPhaseDuration(duration);
+            }
+            ImGui::Text("Support foot %s", stepping.supportRight() ? "right (foot_1)" : "left (foot_2)");
+            if (stepping.phase() != StepPhase::Idle) {
+                ImGui::Text("Step target  %.2f  %.2f", stepping.stepTarget().x, stepping.stepTarget().z);
+            }
+            if (ImGui::Button("Weight to right")) {
+                playing = true;
+                balance.setEnabled(true, motors);
+                stepping.requestTransfer(true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Weight to left")) {
+                playing = true;
+                balance.setEnabled(true, motors);
+                stepping.requestTransfer(false);
+            }
+            if (ImGui::Button("Lift left foot")) {
+                playing = true;
+                balance.setEnabled(true, motors);
+                stepping.requestLift(true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Lift right foot")) {
+                playing = true;
+                balance.setEnabled(true, motors);
+                stepping.requestLift(false);
+            }
+            if (ImGui::Button("Recovery step")) {
+                playing = true;
+                balance.setEnabled(true, motors);
+                const Vec3 direction = length(balance.state().comVelocity) > 0.05f ? balance.state().comVelocity : balance.state().facing;
+                const bool supportRight = dot(direction, balance.state().right) < 0.f;
+                stepping.requestRecovery(supportRight, direction);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Cancel step")) {
+                stepping.cancel();
+                balance.setStepBias({}, {});
+            }
+            ImGui::TextUnformatted("One attempt. A lost stand falls. The feet are not pinned.");
+        }
         if (ImGui::CollapsingHeader("Traces")) {
             plot("COM forward (m)", &BalanceSample::comForward);
             plot("COM speed (m/s)", &BalanceSample::comSpeed);
@@ -1744,7 +1840,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.4 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.0 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

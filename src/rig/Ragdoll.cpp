@@ -28,6 +28,83 @@ float segmentDistance(Vec3 a0, Vec3 a1, Vec3 b0, Vec3 b1) {
                     std::min(pointSegmentDistance(b0, a0, a1), pointSegmentDistance(b1, a0, a1)));
 }
 
+// Smallest principal axis of a point cloud. This is the thin direction of the
+// foot mesh, which is the visible sole, not the bone axis.
+bool smallestPrincipalAxis(const std::vector<Vec3>& points, Vec3& axis) {
+    if (points.size() < 8) {
+        return false;
+    }
+    Vec3 mean{};
+    for (const Vec3& point : points) {
+        mean = mean + point;
+    }
+    mean = mean * (1.f / float(points.size()));
+    float covariance[3][3] = {};
+    for (const Vec3& point : points) {
+        const Vec3 delta = point - mean;
+        const float value[3] = {delta.x, delta.y, delta.z};
+        for (int row = 0; row < 3; ++row) {
+            for (int column = 0; column < 3; ++column) {
+                covariance[row][column] += value[row] * value[column];
+            }
+        }
+    }
+    float vectors[3][3] = {{1.f, 0.f, 0.f}, {0.f, 1.f, 0.f}, {0.f, 0.f, 1.f}};
+    for (int iteration = 0; iteration < 16; ++iteration) {
+        int p = 0;
+        int q = 1;
+        float largest = std::fabs(covariance[0][1]);
+        if (std::fabs(covariance[0][2]) > largest) {
+            largest = std::fabs(covariance[0][2]);
+            p = 0;
+            q = 2;
+        }
+        if (std::fabs(covariance[1][2]) > largest) {
+            largest = std::fabs(covariance[1][2]);
+            p = 1;
+            q = 2;
+        }
+        if (largest < 1e-12f) {
+            break;
+        }
+        const float app = covariance[p][p];
+        const float aqq = covariance[q][q];
+        const float apq = covariance[p][q];
+        const float tau = (aqq - app) / (2.f * apq);
+        const float tangent = std::copysign(1.f, tau) / (std::fabs(tau) + std::sqrt(1.f + tau * tau));
+        const float cosine = 1.f / std::sqrt(1.f + tangent * tangent);
+        const float sine = tangent * cosine;
+        covariance[p][p] = app - tangent * apq;
+        covariance[q][q] = aqq + tangent * apq;
+        covariance[p][q] = 0.f;
+        covariance[q][p] = 0.f;
+        for (int row = 0; row < 3; ++row) {
+            if (row == p || row == q) {
+                continue;
+            }
+            const float arp = covariance[row][p];
+            const float arq = covariance[row][q];
+            covariance[row][p] = covariance[p][row] = cosine * arp - sine * arq;
+            covariance[row][q] = covariance[q][row] = sine * arp + cosine * arq;
+        }
+        for (int row = 0; row < 3; ++row) {
+            const float vip = vectors[row][p];
+            const float viq = vectors[row][q];
+            vectors[row][p] = cosine * vip - sine * viq;
+            vectors[row][q] = sine * vip + cosine * viq;
+        }
+    }
+    int axisIndex = 0;
+    if (covariance[1][1] < covariance[axisIndex][axisIndex]) {
+        axisIndex = 1;
+    }
+    if (covariance[2][2] < covariance[axisIndex][axisIndex]) {
+        axisIndex = 2;
+    }
+    axis = normalize(Vec3{vectors[0][axisIndex], vectors[1][axisIndex], vectors[2][axisIndex]});
+    return finite(axis);
+}
+
 struct Basis {
     Vec3 x{1.f, 0.f, 0.f};
     Vec3 y{0.f, 1.f, 0.f};
@@ -193,6 +270,7 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         info.angularDamping = preset.angularDamping;
         info.collisionSubGroup = i;
         std::vector<Vec3> footPoints;
+        std::vector<Vec3> footNormals;
         if (spec.collider == ColliderKind::Box) {
             for (const auto& mesh : model.meshes) {
                 if (mesh.bone < 0) {
@@ -208,9 +286,11 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
                 if (!owned) {
                     continue;
                 }
+                const Quat boneRotation = model.bones[mesh.bone].bindWorld.rotation();
                 for (const auto& vertex : mesh.vertices) {
                     const Vec3 worldPoint = transformPoint(model.bones[mesh.bone].bindWorld, vertex.position);
                     footPoints.push_back(rotate(conjugate(rotation), worldPoint - center));
+                    footNormals.push_back(rotate(conjugate(rotation), rotate(boneRotation, vertex.normal)));
                 }
             }
         }
@@ -222,22 +302,67 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         int soleUndersideCount = 0;
         float soleUndersideGap = 0.f;
         if (footPoints.size() > 8) {
-            // Local +Y is the heel-to-toe bone. The sole normal is the part of
-            // world up perpendicular to that bone, so the ankle pitch that levels
-            // the bone also levels this face.
-            Vec3 forward{0.f, 1.f, 0.f};
-            Vec3 sole = rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f});
-            sole.y = 0.f;
-            if (length(sole) < 1e-4f) {
-                sole = {0.f, 0.f, 1.f};
+            // The bone-locked sole used world up with its component along the
+            // foot bone removed. That face is perpendicular to the bone, not
+            // to the shoe. The standing pose then leveled the box and left the
+            // visible sole pitched, so the mesh sat on a heel or above the floor.
+            Vec3 boneSole = rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f});
+            boneSole.y = 0.f;
+            if (length(boneSole) < 1e-4f) {
+                boneSole = {0.f, 0.f, 1.f};
             }
-            sole = normalize(sole);
+            boneSole = normalize(boneSole);
+            const Vec3 upInBody = rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f});
+            Vec3 underside{};
+            int undersideCount = 0;
+            for (const Vec3& normal : footNormals) {
+                if (length(normal) < 1e-4f) {
+                    continue;
+                }
+                const Vec3 unit = normalize(normal);
+                if (dot(unit, upInBody) < -0.25f) {
+                    underside = underside + unit;
+                    ++undersideCount;
+                }
+            }
+            Vec3 sole = boneSole;
+            if (undersideCount >= 12) {
+                sole = -normalize(underside);
+            }
+            std::vector<Vec3> solePoints;
+            solePoints.reserve(footPoints.size() / 5);
+            for (size_t pointIndex = 0; pointIndex < footPoints.size() && pointIndex < footNormals.size(); ++pointIndex) {
+                const Vec3 normal = footNormals[pointIndex];
+                if (length(normal) < 1e-4f) {
+                    continue;
+                }
+                if (dot(normalize(normal), -sole) > 0.75f) {
+                    solePoints.push_back(footPoints[pointIndex]);
+                }
+            }
+            Vec3 refined{};
+            if (solePoints.size() >= 12 && smallestPrincipalAxis(solePoints, refined)) {
+                if (dot(refined, sole) < 0.f) {
+                    refined = -refined;
+                }
+                sole = refined;
+            }
+            // Heel-to-toe stays the foot bone, projected onto the sole so the
+            // ankle pivot and the heel reference keep their anatomical sense.
+            Vec3 forward{0.f, 1.f, 0.f};
+            forward = forward - sole * dot(forward, sole);
+            if (length(forward) < 1e-4f) {
+                forward = {0.f, 1.f, 0.f};
+            }
+            forward = normalize(forward);
             Vec3 lateral = cross(forward, sole);
             if (length(lateral) < 1e-4f) {
                 lateral = {1.f, 0.f, 0.f};
             }
             lateral = normalize(lateral);
             sole = normalize(cross(lateral, forward));
+            const float soleCorrectionDeg = degrees(std::acos(clampf(dot(boneSole, sole), -1.f, 1.f)));
+            Log::info(spec.id + " sole realigned " + std::to_string(soleCorrectionDeg) + " deg off the bone-perpendicular face");
             auto span = [&](Vec3 axis, float& minimum, float& maximum) {
                 minimum = 1e9f;
                 maximum = -1e9f;
@@ -665,6 +790,10 @@ void resetRagdoll(PhysicsWorld& world, Ragdoll& ragdoll) {
         world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, true);
         world.setBodyVelocity(body.physics, {}, {});
     }
+}
+
+bool fitThinNormal(const std::vector<Vec3>& points, Vec3& normal) {
+    return smallestPrincipalAxis(points, normal);
 }
 
 PosePalette posePalette(const PhysicsWorld& world, const Ragdoll& ragdoll, const ImportedModel& model) {

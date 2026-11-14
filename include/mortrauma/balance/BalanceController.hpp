@@ -27,6 +27,14 @@ struct BalanceAxes {
 
 BalanceAxes balanceCorrection(const BalanceConfig& config, float forward, float lateral, float forwardRate, float lateralRate, bool ankles, bool hips);
 
+// Extra joint command owned by the stepping supervisor. replace drops the
+// balance correction on that joint and uses euler alone, still added to the
+// standing reference. The balance controller remains the only motor writer.
+struct JointBias {
+    Vec3 euler{};
+    bool replace = false;
+};
+
 class BalanceController {
 public:
     void setConfig(const BalanceConfig& config);
@@ -41,6 +49,9 @@ public:
 
     void observe(const PhysicsWorld& world, const Ragdoll& ragdoll, float dt);
     void command(const Ragdoll& ragdoll, MotorController& motors);
+    // Applied on the next command. The offset moves the tracked point; it does
+    // not pin a foot. Cleared by passing an empty bias and a zero offset.
+    void setStepBias(Vec3 referenceOffset, std::unordered_map<std::string, JointBias> bias);
 
     const BalanceState& state() const { return state_; }
     BalanceDiagnostics& diagnostics() { return diagnostics_; }
@@ -63,6 +74,8 @@ private:
     bool anklesSettled_ = false;
     bool fellLatch_ = false;
     float stoodSeconds_ = 0.f;
+    Vec3 stepOffset_{};
+    std::unordered_map<std::string, JointBias> stepBias_;
 };
 
 }  // namespace mt

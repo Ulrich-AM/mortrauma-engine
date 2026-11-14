@@ -225,7 +225,9 @@ void testBal003() {
               << mt::balancePhaseName(trial.phase) << '\n';
     expect(trial.finite, "BAL-003 finite");
     expect(!lab.world.supportActive(), "BAL-003 no hidden support");
-    expect(travel > 0.02f, "BAL-003 the push moves the body");
+    // The aligned sole stops the old heel-box slide. This 6 N·s push moved the
+    // center of mass 9 mm and tilted the torso 0.27 rad, and the stance held.
+    expect(travel > 0.02f || trial.maxTilt > 0.2f, "BAL-003 the push moves the body");
     // v0.3.1 fell from 6 N·s. With the COM over the ankles the same push is
     // rejected. A 55 N·s push is still a fall; that is BAL-005.
     expect(!fell && trial.minComY > 0.9f, "BAL-003 a 6 N·s forward push no longer drops the stance");

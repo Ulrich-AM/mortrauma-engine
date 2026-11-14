@@ -98,6 +98,8 @@ void applyPreset(PhysicsWorld& world, Ragdoll& ragdoll, const JointPreset& prese
 void destroyRagdoll(PhysicsWorld& world, Ragdoll& ragdoll);
 void resetRagdoll(PhysicsWorld& world, Ragdoll& ragdoll);
 PosePalette posePalette(const PhysicsWorld& world, const Ragdoll& ragdoll, const ImportedModel& model);
+// Thin axis of a point cloud, used to read the visible sole. Empty input fails.
+bool fitThinNormal(const std::vector<Vec3>& points, Vec3& normal);
 int disconnectedComponents(const Ragdoll& ragdoll);
 
 }  // namespace mt

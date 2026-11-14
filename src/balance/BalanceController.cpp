@@ -70,6 +70,12 @@ void BalanceController::setEnabled(bool enabled, MotorController& motors) {
     enabled_ = true;
 }
 
+void BalanceController::setStepBias(Vec3 referenceOffset, std::unordered_map<std::string, JointBias> bias) {
+    stepOffset_ = referenceOffset;
+    stepBias_ = std::move(bias);
+    state_.balanceReference = state_.balanceReference + stepOffset_;
+}
+
 void BalanceController::setReference(std::vector<MotorTaskCommand> reference) {
     reference_.clear();
     for (const auto& command : reference) {
@@ -320,6 +326,10 @@ void BalanceController::command(const Ragdoll& ragdoll, MotorController& motors)
             const float share = joint.id == "spine_stomach" ? 0.45f : (joint.id == "spine_chest" ? 0.35f : 0.2f);
             delta.z = clampf(-torso * leanForward * share, -0.22f, 0.22f);
             delta.y = clampf(-torso * leanLateral * share, -0.22f, 0.22f);
+        }
+        const auto bias = stepBias_.find(joint.id);
+        if (bias != stepBias_.end()) {
+            delta = bias->second.replace ? bias->second.euler : delta + bias->second.euler;
         }
         Quat target = reference;
         if (std::fabs(delta.x) + std::fabs(delta.y) + std::fabs(delta.z) > 1e-5f) {

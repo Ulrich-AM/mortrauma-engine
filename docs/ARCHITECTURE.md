@@ -40,6 +40,8 @@ Jolt 5.3 does not support soft angular limits. Compliance is friction plus body 
 
 v0.3.4 loads that file only. There is no character catalog. Another JSON with the same schema can still be built by `RagdollBuilder`; the application does not offer a second one. The importer requires skin bones.
 
+The foot box is not perpendicular to the foot bone. Its sole normal is the visible underside: the average of the mesh normals that point downward in the bind pose, then the thin axis of the vertices that share that normal. Heel-to-toe stays the bone direction projected onto that plane. The half extents are the bounds of the same vertices on those axes. `StepController` does not write motors itself. It sets a reference offset and joint bias on `BalanceController`, which remains the only caller that builds the motor task.
+
 ## Rendering
 
 Each mesh is rigidly weighted to one bone. Vertices are baked into that bone's local frame. Every frame the bone matrix is `bodyTransform * boneFromBody`, and the mesh is drawn with that matrix. Most collision shapes are capsules or spheres. The feet are boxes fitted to those vertices. Debug drawing uses the body pose, `shapeCenter`, and `shapeRotation`, which is the same placement Jolt simulates (`RotatedTranslatedShape` plus a center-of-mass shift back to the body origin). `PhysicsWorld::worldBounds` reads `Body::GetWorldSpaceBounds` so a test can compare that box with the drawn corners.
