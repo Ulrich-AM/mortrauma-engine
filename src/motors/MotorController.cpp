@@ -126,17 +126,20 @@ bool MotorController::bind(const PhysicsWorld& world, const Ragdoll& ragdoll) {
     return bound_;
 }
 
-void MotorController::loadDefaultProfiles() {
+void MotorController::loadDefaultProfiles() { loadProfilesFrom("configurations/motors"); }
+
+void MotorController::loadProfilesFrom(const std::string& directory) {
     passive_ = builtinPassiveProfile();
     compliant_ = builtinCompliantProfile();
     active_ = builtinActiveProfile();
-    if (const auto path = findAsset("configurations/motors/passive.json"); !path.empty()) {
+    const std::string root = directory.empty() ? std::string("configurations/motors") : directory;
+    if (const auto path = findAsset(root + "/passive.json"); !path.empty()) {
         loadMotorProfile(passive_, path.string());
     }
-    if (const auto path = findAsset("configurations/motors/compliant.json"); !path.empty()) {
+    if (const auto path = findAsset(root + "/compliant.json"); !path.empty()) {
         loadMotorProfile(compliant_, path.string());
     }
-    if (const auto path = findAsset("configurations/motors/active.json"); !path.empty()) {
+    if (const auto path = findAsset(root + "/active.json"); !path.empty()) {
         loadMotorProfile(active_, path.string());
     }
 }

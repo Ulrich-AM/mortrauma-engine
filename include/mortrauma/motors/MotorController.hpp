@@ -51,6 +51,9 @@ public:
     bool bound() const { return bound_; }
 
     void loadDefaultProfiles();
+    // Loads passive, compliant, and active JSON from an asset directory on top
+    // of the built-in table. Does not apply another character's overrides.
+    void loadProfilesFrom(const std::string& directory);
     const MotorProfile& profile(MotorMode mode) const;
 
     void setMode(MotorMode mode);

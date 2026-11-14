@@ -1,6 +1,6 @@
 # Testing
 
-Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. They load `humanoidguy_rigged.fbx` and the character JSON. A missing asset fails the test. The procedural stand-in is not accepted as a pass. `mortrauma_tests DUMP` prints bind positions and is not part of CTest.
+Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. RIG, PHY, MOT, GRAB, FOOT, BAL, and EQ load `humanoidguy_rigged.fbx`. A missing Humanoidguy asset fails those tests. The procedural stand-in is not accepted as a pass. YBOT-001 through YBOT-009 load `assets/characters/ybot.fbx` when that file is present and skip, successfully, when it is absent, because the model is not part of the public checkout. YBOT-010 always builds Humanoidguy. `mortrauma_tests DUMP` prints bind positions and is not part of CTest. `mortrauma_tests YBOT-REPORT` prints the standing comparison and is not part of CTest.
 
 v0.2.0 adds MOT-001 through MOT-012. The motor numbers are in `docs/M2_TESTING.md`. v0.3.0 adds GRAB-001 through GRAB-007 and BAL-001 through BAL-014. The standing numbers and the cases that are expected to fall are in `docs/BALANCE_TESTING.md`. The table below is the original v0.1.0 record.
 

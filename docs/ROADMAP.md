@@ -14,6 +14,8 @@ v0.3.1 (M3.1) replaces the foot capsules with a flat sole box and levels that so
 
 v0.3.2 (M3.2) moves the standing reference from the heel blend onto the ankles. The same torque limits then hold a 30 s quiet stand. The torso still sways by about 10°, the unloaded feet differ by about 12 mm, and contact impulses are not measured. See `docs/EQUILIBRIUM_ANALYSIS.md`.
 
+v0.3.3 keeps that controller and adds the supplied Y-Bot as a second selectable rig. Humanoidguy's bodies, torque limits, and standing pose are unchanged. The Y-Bot file is a rigid segmented figure, not a skinned Mixamo skeleton, and it is not redistributed. See `docs/YBOT_COMPARISON.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.

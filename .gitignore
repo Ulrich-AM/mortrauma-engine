@@ -11,3 +11,5 @@ CMakeUserPresets.json
 mortrauma_layout.ini
 package/
 *.zip
+# Supplied segmented character. Not a redistributable Mixamo file.
+assets/characters/ybot.fbx
