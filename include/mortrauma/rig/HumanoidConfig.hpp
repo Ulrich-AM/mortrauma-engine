@@ -59,7 +59,21 @@ struct CharacterConfig {
     const BodyConfig* findBody(const std::string& id) const;
 };
 
+// Which model, ragdoll file, and presets one selectable character uses.
+// The ragdoll JSON itself stays the existing character configuration.
+struct CharacterProfile {
+    std::string id;
+    std::string label;
+    std::string model;
+    std::string rig;
+    std::string balancePreset = "normal";
+    std::string motors = "configurations/motors";
+    std::string notes;
+    std::string error;
+};
+
 CharacterConfig loadCharacterConfig(const std::string& path);
+CharacterProfile loadCharacterProfile(const std::string& path);
 JointPreset loadJointPreset(const std::string& path, std::string& error);
 bool saveJointPreset(const std::string& path, const JointPreset& preset, std::string& error);
 

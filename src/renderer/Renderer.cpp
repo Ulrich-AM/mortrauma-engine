@@ -427,6 +427,16 @@ int Renderer::createMesh(const std::vector<SkinnedVertex>& vertices, const std::
     return id;
 }
 
+void Renderer::destroyMesh(int mesh) {
+    if (mesh < 0 || mesh >= int(meshes_.size()) || meshes_[mesh].count == 0) {
+        return;
+    }
+    glDeleteVertexArrays_(1, &meshes_[mesh].vao);
+    glDeleteBuffers_(1, &meshes_[mesh].vbo);
+    glDeleteBuffers_(1, &meshes_[mesh].ebo);
+    meshes_[mesh] = {};
+}
+
 void Renderer::beginScene(const Mat4& viewProjection, bool wireframe) {
     wireframe_ = wireframe;
     lineVertices_.clear();
@@ -450,7 +460,7 @@ void Renderer::beginScene(const Mat4& viewProjection, bool wireframe) {
 }
 
 void Renderer::drawMesh(int mesh, const Mat4& model, Vec3 color) {
-    if (mesh < 0 || mesh >= int(meshes_.size())) {
+    if (mesh < 0 || mesh >= int(meshes_.size()) || meshes_[mesh].count <= 0) {
         return;
     }
     glUseProgram_(program_);

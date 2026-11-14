@@ -1,0 +1,41 @@
+{
+  "name": "Y-Bot",
+  "notes": "Rigid segmented character. Pivot bones are the joint-marker spheres. Visible meshes are the limb parts. Sphere meshes are not colliders. Side 1 is the character's right when facing -Z (Der, *_2). Side 2 is the character's left (Izq). There is no separate hip or clavicle body. Total mass 69.0 kg.",
+  "bodies": [
+    {"id": "pelvis", "name": "Pelvis", "bones": ["Cadera"], "primary_bone": "Cadera_2", "end_bone": "Cintura", "end_extension": 0.0, "mass": 11.0, "min_radius": 0.07, "max_radius": 0.16, "friction": 0.5},
+    {"id": "stomach", "name": "Abdomen", "bones": ["Cintura"], "primary_bone": "Cintura", "end_bone": "Plexo_2", "end_extension": 0.0, "mass": 8.0, "min_radius": 0.07, "max_radius": 0.16, "friction": 0.5},
+    {"id": "chest", "name": "Chest", "bones": ["Plexo"], "primary_bone": "Plexo_2", "end_bone": "Cuello", "end_extension": 0.0, "mass": 11.0, "min_radius": 0.08, "max_radius": 0.18, "friction": 0.5},
+    {"id": "neck", "name": "Neck", "bones": ["Cuello"], "primary_bone": "Cuello", "end_bone": "Cabeza", "end_extension": 0.0, "mass": 1.2, "min_radius": 0.04, "max_radius": 0.08, "friction": 0.5},
+    {"id": "head", "name": "Head", "bones": ["Cabeza"], "primary_bone": "Cabeza", "end_extension": 0.12, "mass": 4.2, "min_radius": 0.08, "max_radius": 0.14, "friction": 0.5},
+    {"id": "upper_arm_1", "name": "Upper arm right", "bones": ["Humero_2"], "primary_bone": "Hombro_2", "end_bone": "Codo_2", "end_extension": 0.0, "mass": 2.2, "min_radius": 0.04, "max_radius": 0.09, "friction": 0.5},
+    {"id": "forearm_1", "name": "Forearm right", "bones": ["Cubito_2"], "primary_bone": "Codo_2", "end_bone": "Palma_3", "end_extension": 0.0, "mass": 1.4, "min_radius": 0.035, "max_radius": 0.08, "friction": 0.5},
+    {"id": "hand_1", "name": "Hand right", "bones": ["Palma_2"], "primary_bone": "Palma_3", "end_bone": "Palma_2", "end_extension": 0.06, "mass": 0.55, "min_radius": 0.03, "max_radius": 0.07, "friction": 0.5},
+    {"id": "upper_arm_2", "name": "Upper arm left", "bones": ["Humero"], "primary_bone": "Hombro", "end_bone": "Codo", "end_extension": 0.0, "mass": 2.2, "min_radius": 0.04, "max_radius": 0.09, "friction": 0.5},
+    {"id": "forearm_2", "name": "Forearm left", "bones": ["Cubito"], "primary_bone": "Codo", "end_bone": "Muñeca", "end_extension": 0.0, "mass": 1.4, "min_radius": 0.035, "max_radius": 0.08, "friction": 0.5},
+    {"id": "hand_2", "name": "Hand left", "bones": ["Palma"], "primary_bone": "Muñeca", "end_bone": "Palma", "end_extension": 0.06, "mass": 0.55, "min_radius": 0.03, "max_radius": 0.07, "friction": 0.5},
+    {"id": "thigh_1", "name": "Thigh right", "bones": ["Muslo_2"], "primary_bone": "Cadera2", "end_bone": "Rodilla_2", "end_extension": 0.0, "mass": 8.0, "min_radius": 0.06, "max_radius": 0.12, "friction": 0.5},
+    {"id": "calf_1", "name": "Calf right", "bones": ["Tibia_2"], "primary_bone": "Rodilla_2", "end_bone": "Tobillo_2", "end_extension": 0.0, "mass": 3.5, "min_radius": 0.045, "max_radius": 0.1, "friction": 0.5},
+    {"id": "foot_1", "name": "Foot right", "bones": ["Pie_2", "Dedos_2"], "primary_bone": "Tobillo_2", "end_bone": "Dedos_4", "end_extension": 0.02, "mass": 1.15, "min_radius": 0.03, "max_radius": 0.08, "friction": 0.7, "collider": "box"},
+    {"id": "thigh_2", "name": "Thigh left", "bones": ["Muslo"], "primary_bone": "Cadera1", "end_bone": "Rodilla", "end_extension": 0.0, "mass": 8.0, "min_radius": 0.06, "max_radius": 0.12, "friction": 0.5},
+    {"id": "calf_2", "name": "Calf left", "bones": ["Tibia"], "primary_bone": "Rodilla", "end_bone": "Tobillo", "end_extension": 0.0, "mass": 3.5, "min_radius": 0.045, "max_radius": 0.1, "friction": 0.5},
+    {"id": "foot_2", "name": "Foot left", "bones": ["Pie", "Dedos"], "primary_bone": "Tobillo", "end_bone": "Dedos_3", "end_extension": 0.02, "mass": 1.15, "min_radius": 0.03, "max_radius": 0.08, "friction": 0.7, "collider": "box"}
+  ],
+  "joints": [
+    {"id": "spine_stomach", "name": "Spine (pelvis-abdomen)", "parent": "pelvis", "child": "stomach", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -15, "twist_max": 15, "swing1_min": -18, "swing1_max": 18, "swing2_min": -18, "swing2_max": 18}},
+    {"id": "spine_chest", "name": "Spine (abdomen-chest)", "parent": "stomach", "child": "chest", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -15, "twist_max": 15, "swing1_min": -18, "swing1_max": 18, "swing2_min": -18, "swing2_max": 18}},
+    {"id": "spine_neck", "name": "Spine (chest-neck)", "parent": "chest", "child": "neck", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -20, "twist_max": 20, "swing1_min": -22, "swing1_max": 22, "swing2_min": -22, "swing2_max": 22}},
+    {"id": "neck", "name": "Neck", "parent": "neck", "child": "head", "swing": "cone", "orient": "none", "limits_deg": {"twist_min": -50, "twist_max": 50, "swing1_min": -40, "swing1_max": 40, "swing2_min": -40, "swing2_max": 40}},
+    {"id": "shoulder_1", "name": "Shoulder right", "parent": "chest", "child": "upper_arm_1", "swing": "cone", "orient": "none", "limits_deg": {"twist_min": -70, "twist_max": 70, "swing1_min": 0, "swing1_max": 120, "swing2_min": 0, "swing2_max": 120}},
+    {"id": "elbow_1", "name": "Elbow right", "parent": "upper_arm_1", "child": "forearm_1", "swing": "pyramid", "orient": "elbow", "limits_deg": {"twist_min": -60, "twist_max": 60, "swing1_min": -8, "swing1_max": 8, "swing2_min": -10, "swing2_max": 145}},
+    {"id": "wrist_1", "name": "Wrist right", "parent": "forearm_1", "child": "hand_1", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -25, "twist_max": 25, "swing1_min": -45, "swing1_max": 45, "swing2_min": -45, "swing2_max": 45}},
+    {"id": "shoulder_2", "name": "Shoulder left", "parent": "chest", "child": "upper_arm_2", "swing": "cone", "orient": "none", "limits_deg": {"twist_min": -70, "twist_max": 70, "swing1_min": 0, "swing1_max": 120, "swing2_min": 0, "swing2_max": 120}},
+    {"id": "elbow_2", "name": "Elbow left", "parent": "upper_arm_2", "child": "forearm_2", "swing": "pyramid", "orient": "elbow", "limits_deg": {"twist_min": -60, "twist_max": 60, "swing1_min": -8, "swing1_max": 8, "swing2_min": -10, "swing2_max": 145}},
+    {"id": "wrist_2", "name": "Wrist left", "parent": "forearm_2", "child": "hand_2", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -25, "twist_max": 25, "swing1_min": -45, "swing1_max": 45, "swing2_min": -45, "swing2_max": 45}},
+    {"id": "hip_1", "name": "Hip right", "parent": "pelvis", "child": "thigh_1", "swing": "pyramid", "orient": "hip", "limits_deg": {"twist_min": -40, "twist_max": 40, "swing1_min": -45, "swing1_max": 45, "swing2_min": -30, "swing2_max": 110}},
+    {"id": "knee_1", "name": "Knee right", "parent": "thigh_1", "child": "calf_1", "swing": "pyramid", "orient": "knee", "limits_deg": {"twist_min": -10, "twist_max": 10, "swing1_min": -8, "swing1_max": 8, "swing2_min": 0, "swing2_max": 145}},
+    {"id": "ankle_1", "name": "Ankle right", "parent": "calf_1", "child": "foot_1", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -20, "twist_max": 20, "swing1_min": -30, "swing1_max": 30, "swing2_min": -35, "swing2_max": 40}},
+    {"id": "hip_2", "name": "Hip left", "parent": "pelvis", "child": "thigh_2", "swing": "pyramid", "orient": "hip", "limits_deg": {"twist_min": -40, "twist_max": 40, "swing1_min": -45, "swing1_max": 45, "swing2_min": -30, "swing2_max": 110}},
+    {"id": "knee_2", "name": "Knee left", "parent": "thigh_2", "child": "calf_2", "swing": "pyramid", "orient": "knee", "limits_deg": {"twist_min": -10, "twist_max": 10, "swing1_min": -8, "swing1_max": 8, "swing2_min": 0, "swing2_max": 145}},
+    {"id": "ankle_2", "name": "Ankle left", "parent": "calf_2", "child": "foot_2", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -20, "twist_max": 20, "swing1_min": -30, "swing1_max": 30, "swing2_min": -35, "swing2_max": 40}}
+  ]
+}

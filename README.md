@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.3.2 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand. v0.3.1 gives the feet a flat sole collider fitted to the visible mesh. v0.3.2 places the center of mass over the ankles so the 12 N·m ankle motors can hold a quiet stand; the torso still sways, and a hard push still knocks the character down. One Humanoidguy estimates its center of mass and foot contacts and commands joint targets. It does not walk, step, get up, or grab on its own. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
+MORTRAUMA v0.3.3 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand. v0.3.1 gives the feet a flat sole collider fitted to the visible mesh. v0.3.2 places the center of mass over the ankles so the 12 N·m ankle motors can hold a quiet stand. v0.3.3 adds the supplied Y-Bot figure as a second character beside Humanoidguy. The same motor and balance controllers run both. The comparison is in `docs/YBOT_COMPARISON.md`. Neither character walks, steps, gets up, or grabs on its own. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 
@@ -17,11 +17,11 @@ src/poses/            procedural poses and optional Mixamo retarget
 src/assets/           Assimp import
 src/renderer/         OpenGL viewport
 src/app/              GLFW window, docking UI, tools
-assets/characters/    humanoidguy_rigged.fbx
-assets/configurations character, joint presets, and motor profiles
+assets/characters/    humanoidguy_rigged.fbx, and a local ybot.fbx that is not in the public package
+assets/configurations character profiles, joint presets, and motor profiles
 assets/poses/         procedural pose parameters and an optional Mixamo reference
 assets/environments/  test-lab and standing-scene descriptions
-tests/                CTest programs RIG, PHY, LIM, MOT, GRAB, and BAL
+tests/                CTest programs RIG, PHY, LIM, MOT, GRAB, BAL, FOOT, EQ, and YBOT
 ```
 
 The engine target `mortrauma_engine` does not link Dear ImGui or OpenGL. The executable does.

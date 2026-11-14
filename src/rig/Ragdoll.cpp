@@ -574,8 +574,12 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         }
         return false;
     };
+    // Humanoidguy has hip bodies between the pelvis and the thighs. A rig that
+    // hinges the thighs on the pelvis directly still has to reach both feet.
+    const bool hasHipBodies = bodyIndex.count("hip_1") != 0 && bodyIndex.count("hip_2") != 0;
     ragdoll.legsAttached = reaches("pelvis", "foot_1") && reaches("pelvis", "foot_2") && reaches("pelvis", "thigh_1") &&
-                           reaches("pelvis", "thigh_2") && reaches("pelvis", "hip_1") && reaches("pelvis", "hip_2");
+                           reaches("pelvis", "thigh_2") &&
+                           (!hasHipBodies || (reaches("pelvis", "hip_1") && reaches("pelvis", "hip_2")));
     if (!ragdoll.legsAttached) {
         ragdoll.error = "One or both legs are not constrained to the pelvis.";
         Log::error(ragdoll.error);
@@ -641,6 +645,18 @@ void applyPreset(PhysicsWorld& world, Ragdoll& ragdoll, const JointPreset& prese
         world.setJointLimits(joint.physics, twistMin, twistMax, swing1Min, swing1Max, swing2Min, swing2Max);
         world.setJointAngularFriction(joint.physics, preset.angularFriction);
     }
+}
+
+void destroyRagdoll(PhysicsWorld& world, Ragdoll& ragdoll) {
+    world.clearGrabs();
+    world.endSupport();
+    for (const auto& joint : ragdoll.joints) {
+        world.destroyJoint(joint.physics);
+    }
+    for (const auto& body : ragdoll.bodies) {
+        world.destroyBody(body.physics);
+    }
+    ragdoll = {};
 }
 
 void resetRagdoll(PhysicsWorld& world, Ragdoll& ragdoll) {

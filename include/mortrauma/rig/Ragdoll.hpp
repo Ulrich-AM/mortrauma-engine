@@ -95,6 +95,7 @@ public:
 };
 
 void applyPreset(PhysicsWorld& world, Ragdoll& ragdoll, const JointPreset& preset);
+void destroyRagdoll(PhysicsWorld& world, Ragdoll& ragdoll);
 void resetRagdoll(PhysicsWorld& world, Ragdoll& ragdoll);
 PosePalette posePalette(const PhysicsWorld& world, const Ragdoll& ragdoll, const ImportedModel& model);
 int disconnectedComponents(const Ragdoll& ragdoll);

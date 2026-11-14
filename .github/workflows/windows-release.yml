@@ -1,7 +1,7 @@
 name: Windows Release
 
 env:
-  PACKAGE_VERSION: "0.3.2"
+  PACKAGE_VERSION: "0.3.3"
 
 on:
   push:
@@ -58,10 +58,10 @@ jobs:
           The MSVC runtime is linked statically. A Visual Studio install is not required.
           An OpenGL 3.3 driver is required. The build enables AVX2 through Jolt Physics.
 
-          v0.3.2 stands the character with its center of mass over the ankles.
-          A quiet stand is much longer than v0.3.1. The character does not step
-          or get up, and a hard push can still knock it down.
-          Press Play to simulate. See the repository docs for balance and tests.
+          v0.3.3 adds the supplied Y-Bot rig as a second character next to Humanoidguy.
+          The Y-Bot FBX is not in this package. Copy it to assets/characters/ybot.fbx
+          and select Y-Bot in the Character window. Humanoidguy is unchanged.
+          Press Play to simulate. See the repository docs for the comparison.
           "@ | Set-Content -Encoding utf8 (Join-Path $root "README.txt")
           $zip = "MORTRAUMA-v$env:PACKAGE_VERSION-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
@@ -104,7 +104,7 @@ jobs:
             echo "Release $tag already exists. Refusing to overwrite it."
             exit 1
           fi
-          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ] || [ "$tag" = "v0.2.0" ] || [ "$tag" = "v0.3.0" ] || [ "$tag" = "v0.3.1" ]; then
+          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ] || [ "$tag" = "v0.2.0" ] || [ "$tag" = "v0.3.0" ] || [ "$tag" = "v0.3.1" ] || [ "$tag" = "v0.3.2" ]; then
             echo "Refusing to publish over an existing release."
             exit 1
           fi

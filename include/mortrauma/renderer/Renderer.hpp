@@ -18,6 +18,7 @@ public:
     uint32_t colorTexture() const { return colorTexture_; }
 
     int createMesh(const std::vector<SkinnedVertex>& vertices, const std::vector<uint32_t>& indices);
+    void destroyMesh(int mesh);
     void beginScene(const Mat4& viewProjection, bool wireframe);
     void drawMesh(int mesh, const Mat4& model, Vec3 color);
     void drawLine(Vec3 a, Vec3 b, Vec3 color);

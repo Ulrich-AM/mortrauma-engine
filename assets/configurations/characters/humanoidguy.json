@@ -1,0 +1,9 @@
+{
+  "id": "humanoidguy",
+  "label": "Humanoidguy",
+  "model": "characters/humanoidguy_rigged.fbx",
+  "rig": "configurations/humanoidguy.json",
+  "balance_preset": "normal",
+  "motors": "configurations/motors",
+  "notes": "Skinned Mixamo-style rig. Physical settings and the standing pose are unchanged from v0.3.2."
+}

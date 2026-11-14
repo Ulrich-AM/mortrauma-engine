@@ -79,6 +79,8 @@ struct App {
     float transitionDuration = 0.6f;
     bool drivePoseJointsOnly = true;
     std::string poseMessage;
+    std::vector<CharacterProfile> characters;
+    int characterIndex = -1;
     struct MotorTrace {
         std::vector<float> targetDeg;
         std::vector<float> measuredDeg;
@@ -163,35 +165,90 @@ struct App {
         return {0.62f + 0.08f * std::sin(t), 0.5f + 0.05f * std::cos(t * 1.3f), 0.42f + 0.04f * std::sin(t * 0.7f)};
     }
 
-    bool boot() {
-        PhysicsSettings settings;
-        if (!world.initialize(settings)) {
+    void loadCharacterCatalog() {
+        characters.clear();
+        const char* profiles[] = {"configurations/characters/humanoidguy.json", "configurations/characters/ybot.json"};
+        for (const char* relative : profiles) {
+            const auto path = findAsset(relative);
+            if (path.empty()) {
+                continue;
+            }
+            CharacterProfile profile = loadCharacterProfile(path.string());
+            if (!profile.error.empty()) {
+                Log::error(profile.error);
+                continue;
+            }
+            characters.push_back(std::move(profile));
+        }
+    }
+
+    void uploadMeshes() {
+        for (int gpu : meshGpu) {
+            renderer.destroyMesh(gpu);
+        }
+        meshGpu.clear();
+        meshColor.clear();
+        for (const auto& mesh : model.meshes) {
+            meshGpu.push_back(renderer.createMesh(mesh.vertices, mesh.indices));
+            meshColor.push_back(bodyColor(std::max(mesh.bone, 0)));
+        }
+    }
+
+    bool loadCharacter(int index) {
+        if (index < 0 || index >= int(characters.size())) {
+            poseMessage = "Character selection is outside the catalog.";
             return false;
         }
-        gravity = settings.gravity;
-        velocityIterations = settings.velocityIterations;
-        positionIterations = settings.positionIterations;
-        const auto configPath = findAsset("configurations/humanoidguy.json");
-        const auto modelPath = findAsset("characters/humanoidguy_rigged.fbx");
-        const auto presetPath = findAsset("configurations/presets/natural.json");
-        std::string presetError;
-        preset = loadJointPreset(presetPath.string(), presetError);
-        defaultPreset = preset;
+        playing = false;
+        releaseGrab();
+        world.clearGrabs();
+        poseController.cancel();
+        balance.setEnabled(false, motors);
+        motors.clearMotorTask();
+        destroyRagdoll(world, ragdoll);
+        selectedBody = -1;
+        selectedJoint = -1;
+        selection = SelectionKind::None;
+        trace.clear();
+        accumulator = 0.f;
+        capsuleFeet = false;
+
+        const CharacterProfile& profile = characters[index];
+        const auto configPath = findAsset(profile.rig);
+        const auto modelPath = findAsset(profile.model);
+        if (configPath.empty()) {
+            poseMessage = "Rig configuration for " + profile.label + " was not found.";
+            return false;
+        }
         config = loadCharacterConfig(configPath.string());
-        if (modelPath.empty()) {
-            Log::error("humanoidguy_rigged.fbx was not found next to the executable or in the source tree.");
-            model = makeProceduralHumanoid();
+        if (!config.error.empty()) {
+            poseMessage = config.error;
+            return false;
+        }
+        if (modelPath.empty() || !std::filesystem::exists(modelPath)) {
+            if (profile.id == "humanoidguy") {
+                Log::error("humanoidguy_rigged.fbx was not found. Using the procedural stand-in.");
+                model = makeProceduralHumanoid();
+            } else {
+                poseMessage = profile.label + " model was not found at " + profile.model +
+                              ". Place the supplied FBX there. It is not included in the public package.";
+                Log::error(poseMessage);
+                return false;
+            }
         } else {
             model = ModelLoader::load(modelPath.string());
             if (!model.report.ok) {
-                model = makeProceduralHumanoid();
+                if (profile.id == "humanoidguy") {
+                    model = makeProceduralHumanoid();
+                } else {
+                    poseMessage = model.report.error.empty() ? profile.label + " failed to import." : model.report.error;
+                    return false;
+                }
             }
-        }
-        if (!config.error.empty()) {
-            return false;
         }
         ragdoll = RagdollBuilder::build(world, config, model, preset);
         if (!ragdoll.ok) {
+            poseMessage = ragdoll.error;
             return false;
         }
         float lowest = 1e9f;
@@ -209,30 +266,71 @@ struct App {
             }
         }
         std::string balanceError;
-        if (!balance.loadPreset("normal", balanceError)) {
+        if (!balance.loadPreset(profile.balancePreset, balanceError)) {
             Log::error(balanceError);
-        }
-        if (!motors.bind(world, ragdoll)) {
+            poseMessage = balanceError;
             return false;
         }
-        motors.loadDefaultProfiles();
+        if (!motors.bind(world, ragdoll)) {
+            poseMessage = "Motors could not bind to " + profile.label + ".";
+            return false;
+        }
+        motors.loadProfilesFrom(profile.motors);
+        motors.restoreDefaults();
         poseLibrary.rebuild(world, ragdoll);
-        const auto imported = poseLibrary.importDefaultMixamo(world, ragdoll);
-        if (imported.fileFound && imported.ok) {
-            std::string saveError;
-            const auto saved = std::filesystem::path(imported.sourcePath).parent_path() / "mixamo_idle.json";
-            poseLibrary.savePose(imported.pose, saved.string(), saveError);
-            poseMessage = "Mixamo idle retargeted. " + std::to_string(imported.pose.unmapped.size()) + " joints kept the Humanoidguy reference.";
-        } else if (!imported.fileFound) {
-            poseMessage = "No Mixamo file found. Procedural poses only.";
+        if (profile.id == "humanoidguy") {
+            const auto imported = poseLibrary.importDefaultMixamo(world, ragdoll);
+            if (imported.fileFound && imported.ok) {
+                std::string saveError;
+                const auto saved = std::filesystem::path(imported.sourcePath).parent_path() / "mixamo_idle.json";
+                poseLibrary.savePose(imported.pose, saved.string(), saveError);
+                poseMessage = "Mixamo idle retargeted. " + std::to_string(imported.pose.unmapped.size()) + " joints kept the Humanoidguy reference.";
+            } else if (!imported.fileFound) {
+                poseMessage = "No Mixamo file found. Procedural poses only.";
+            } else {
+                poseMessage = imported.error;
+            }
         } else {
-            poseMessage = imported.error;
+            poseMessage = profile.label + " loaded. " + profile.notes;
+        }
+        characterIndex = index;
+        uploadMeshes();
+        balance.resetState();
+        return true;
+    }
+
+    bool switchCharacter(int index) {
+        if (index == characterIndex && ragdoll.ok) {
+            return true;
+        }
+        const int previous = characterIndex;
+        if (loadCharacter(index)) {
+            return true;
+        }
+        const std::string failure = poseMessage;
+        if (previous >= 0 && previous != index && loadCharacter(previous)) {
+            poseMessage = failure + " Kept " + characters[characterIndex].label + ".";
+        }
+        return false;
+    }
+
+    bool boot() {
+        PhysicsSettings settings;
+        if (!world.initialize(settings)) {
+            return false;
+        }
+        gravity = settings.gravity;
+        velocityIterations = settings.velocityIterations;
+        positionIterations = settings.positionIterations;
+        const auto presetPath = findAsset("configurations/presets/natural.json");
+        std::string presetError;
+        preset = loadJointPreset(presetPath.string(), presetError);
+        defaultPreset = preset;
+        loadCharacterCatalog();
+        if (characters.empty() || !loadCharacter(0)) {
+            return false;
         }
         loadEnvironment();
-        for (const auto& mesh : model.meshes) {
-            meshGpu.push_back(renderer.createMesh(mesh.vertices, mesh.indices));
-            meshColor.push_back(bodyColor(std::max(mesh.bone, 0)));
-        }
         return true;
     }
 
@@ -1519,6 +1617,34 @@ struct App {
         }
         ImGui::End();
 
+        ImGui::Begin("Character");
+        if (characters.empty()) {
+            ImGui::TextUnformatted("No character profiles were found.");
+        } else {
+            const char* current = characters[std::clamp(characterIndex, 0, int(characters.size()) - 1)].label.c_str();
+            if (ImGui::BeginCombo("Character", current)) {
+                for (int i = 0; i < int(characters.size()); ++i) {
+                    const bool selected = i == characterIndex;
+                    if (ImGui::Selectable(characters[i].label.c_str(), selected)) {
+                        switchCharacter(i);
+                    }
+                    if (selected) {
+                        ImGui::SetItemDefaultFocus();
+                    }
+                }
+                ImGui::EndCombo();
+            }
+            if (characterIndex >= 0 && characterIndex < int(characters.size()) && !characters[characterIndex].notes.empty()) {
+                ImGui::TextWrapped("%s", characters[characterIndex].notes.c_str());
+            }
+            if (ImGui::Button("Reset to standing pose")) {
+                playing = false;
+                resetToStanding();
+            }
+            ImGui::TextUnformatted("One character is in the scene. Switching pauses, drops grabs, and rebuilds the ragdoll.");
+        }
+        ImGui::End();
+
         ImGui::Begin("Simulation");
         if (ImGui::Button(playing ? "Pause" : "Play")) {
             if (playing) {
@@ -1726,7 +1852,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.2 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.3 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

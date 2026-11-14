@@ -75,3 +75,7 @@ The 75/25 heel blend sat about 60 mm ahead of the ankles. At equal load that is 
 The pose and the feedback law now use the ankle ground projection (`feasibleSolePoint`, lead 0). The placed miss is about 7 mm. The Normal quiet stand holds for 30 s with the torso under about 0.22 rad and the support margin still positive. Gains, torque limits, and friction are the ones from v0.3.1. The unloaded soles still differ by about 12 mm left to right; the ankle limits do not have a level solution once the knees are used to close that gap, and contact closes it in the first second. See `docs/EQUILIBRIUM_ANALYSIS.md` and `docs/M3_2_EXPERIMENTS.md`.
 
 Center of pressure is not measured. The listener does not receive solved impulses. See `docs/COP_AND_LOAD_ESTIMATION.md`.
+
+## v0.3.3 second character
+
+Y-Bot uses this same controller. Character-specific pose fields are `hip_abduction_deg` (default 14, so Humanoidguy is unchanged) and `relax_arms` (default off). Torque files are selected by the character profile. The rig comparison is `docs/YBOT_COMPARISON.md`.
