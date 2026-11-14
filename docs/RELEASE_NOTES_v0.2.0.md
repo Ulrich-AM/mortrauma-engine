@@ -26,6 +26,8 @@ A support fixture can suspend the pelvis from a kinematic spring. It is labeled 
 
 Linux Release: 25/25 CTest cases passed, including MOT-001 through MOT-012 and the existing RIG, PHY, and LIM tests. Numbers are in `docs/M2_TESTING.md`.
 
+Windows Release, GitHub Actions run [43548345446](https://github.com/Ulrich-AM/mortrauma-engine/actions/runs/43548345446) on `7aeb07e`: 25 of 25 tests passed, and the workflow uploaded `MORTRAUMA-v0.2.0-Windows-x64.zip`. The tag workflow rebuilds before it publishes the GitHub Release.
+
 ## Package
 
 The Windows artifact is `MORTRAUMA-v0.2.0-Windows-x64.zip`. The workflow reads the version from `PACKAGE_VERSION` instead of a filename frozen at v0.1.0. The zip contains `MORTRAUMA.exe`, the assets (character, motor profiles, poses, the optional Mixamo reference), and the static MSVC runtime. AVX2 is required through Jolt. OpenGL 3.3 comes from the driver.

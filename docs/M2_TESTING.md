@@ -4,6 +4,8 @@ Automated cases are `MOT-001` through `MOT-012` in `mortrauma_tests`, beside the
 
 Linux Release, 14 Nov 2026, g++ / Ninja, Jolt 5.3.0, single-threaded solver. `ctest --test-dir build --output-on-failure`: 25 of 25 passed (RIG-001–006, PHY-001–006, LIM-001, MOT-001–012) in 1.56 s.
 
+Windows Release, MSVC via GitHub Actions run [43548345446](https://github.com/Ulrich-AM/mortrauma-engine/actions/runs/43548345446) on `7aeb07e`: 25 of 25 passed. The package artifact was `MORTRAUMA-v0.2.0-Windows-x64.zip` (4,304,714 bytes uploaded). The tag workflow rebuilds that commit's tree before publishing.
+
 The Motor Laboratory was compiled into `MORTRAUMA` and was not clicked through in this environment, so the panels are not reported as a manual pass. The Windows Release run is recorded in the release notes once GitHub Actions finishes.
 
 ## Measured results
