@@ -1,0 +1,56 @@
+# Testing
+
+Automated tests are a CTest executable, `mortrauma_tests`, with one case per name. They load `humanoidguy_rigged.fbx` and the character JSON. A missing asset fails the test. The procedural stand-in is not accepted as a pass. `mortrauma_tests DUMP` prints bind positions and is not part of CTest.
+
+The run recorded below is a Linux Release build (Clang 18, Jolt 5.3.0, single-threaded solver) on 14 Nov 2026. All 9 tests passed. Total CTest time was about 0.7 s.
+
+```text
+RIG-001  Passed
+RIG-002  Passed
+RIG-003  Passed
+PHY-001  Passed
+PHY-002  Passed
+PHY-003  Passed
+PHY-004  Passed
+PHY-005  Passed
+PHY-006  Passed
+```
+
+## Tolerances
+
+| Test | Pass condition |
+| --- | --- |
+| RIG-001 | 21 bodies, 20 joints, exactly one constraint component, 28 bones, 56 meshes, no unweighted mesh |
+| RIG-002 | Both feet, thighs, and hips are reachable from the pelvis. Every joint locks translation. Bind-pose anchor separation < 5 mm. Hip joints connect a hip body to a thigh. |
+| RIG-003 | After 2 s of passive motion, every finite speed stays under 40 m/s or rad/s, joint angles stay inside the configured limits plus 0.2 rad, separation < 2 cm |
+| PHY-001 | After 0.8 s the pelvis has dropped at least 15 cm, motion stays finite and under 30 m/s, every ragdoll body is still dynamic |
+| PHY-002 | After 6 s, linear speed < 0.35 m/s, angular speed < 2 rad/s, no body center below y = -0.3 m, graph still connected, separation < 2.5 cm, the dynamic cube rests within 8 cm of y = 0.2 |
+| PHY-003 | A 4 N·s impulse on a 2 kg free body produces 2 m/s ± 0.05. A 25 N·s impulse on the pelvis increases its horizontal speed by more than 0.2 m/s. A grab spring lifts the probe more than 15 cm toward a target 50 cm above it (measured lift 0.50 m), and releasing the grab removes the extra constraint. |
+| PHY-004 | After 1 s and a reset, every body is within 0.1 mm of its initial pose and velocity is below 1e-4 |
+| PHY-005 | Two replays of 2 s with the same impulse at step 60 differ by less than 0.1 mm. The measured deviation was 0. |
+| PHY-006 | Impulses of 5, 20, and 80 N·s on the chest, in six directions, applied off-center. After 1.5 s each, motion is finite, speed is under 60, separation is under 5 cm, and the graph is still one component. |
+
+PHY-002 on this run settled to exactly 0 linear and angular speed (bodies slept) with the lowest body center at y = 0.081 m.
+
+A test is not a pass merely because the process stayed alive. Each case asserts the numeric condition above.
+
+## Manual checklist
+
+These items need a person at the window. An automated screenshot of the paused bind pose was captured under Xvfb with llvmpipe (`docs` does not store the image; the run log showed a successful import, 21 bodies, 20 constraints, and 1 component). Interactive mouse checks were **not** executed on a physical desktop in this environment.
+
+| Check | Result |
+| --- | --- |
+| Window title and dark, sharp-cornered docking layout | Observed in the Xvfb capture: Hierarchy, Viewport, Inspector, Simulation, Diagnostics |
+| Humanoidguy capsules visible in the authored crouched pose, feet at the grid | Observed in the capture. Joint axes sat on the limbs. |
+| Play collapses the ragdoll onto the floor without a visible explosion | Not executed interactively. PHY-001 and PHY-002 cover the same scenario without rendering. |
+| Pause and single step | Not executed interactively. The step function is what the tests call. |
+| Reset restores the pose | Covered by PHY-004. The button calls the same `resetRagdoll`. |
+| Grab drags a limb and the body follows; release drops it | Grab spring covered by PHY-003 on a free body. Mouse picking in the viewport was not exercised by hand. |
+| Push at an off-center point spins a part | Impulse-at-point is the API tested by PHY-003 and PHY-006. The mouse path was not exercised by hand. |
+| Wireframe, collision, contacts, centers of mass | Toggles exist. Not clicked by hand. Joint axes were visible by default in the capture. |
+| Loose / Natural / Firm and save JSON | Preset files load through the same function the tests use. The save button was not clicked by hand. |
+| Platform and ramp toggles | Not clicked by hand. They create and destroy static boxes through the physics adapter. |
+
+## Windows
+
+The Windows Release build, CTest, and the zip artifact are produced by `.github/workflows/windows-release.yml` on `windows-latest`. This Linux session did not compile with MSVC. Do not treat the Linux run as a substitute for that workflow.

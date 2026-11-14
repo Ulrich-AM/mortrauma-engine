@@ -1,0 +1,45 @@
+# Architecture
+
+MORTRAUMA v0.1.0 keeps the simulation independent of the user interface.
+
+```text
+Application (GLFW, Dear ImGui)
+    |  uses
+    +-- Renderer (OpenGL 3.3, no physics types beyond math)
+    +-- Ragdoll builder
+            |  uses
+            +-- PhysicsWorld   Jolt adapter
+            +-- ModelLoader    Assimp
+            +-- Character JSON
+```
+
+`mortrauma_engine` contains core, physics, assets, and rig. It does not include Dear ImGui headers. Button handling lives in `src/app/Application.cpp` and calls the engine. Nothing in the physics step is wired to a particular key code or to one hardcoded mesh.
+
+## Physics adapter
+
+`PhysicsWorld` creates and destroys bodies and joints, steps the solver, and queries transforms, velocities, contacts, and constraint errors. Jolt types do not cross the header. Bodies are dynamic, kinematic, or static. Ragdoll parts share one collision group; a `GroupFilterTable` disables selected pairs. Static and dynamic props use the default group, so filtering inside the ragdoll cannot disable the floor, walls, cube, platform, or ramp.
+
+The step function rejects re-entry. The application owns the fixed-step accumulator (120 Hz, at most 0.25 s of backlog and 6 steps per frame) so a hitch cannot spiral.
+
+Joints are Jolt `SixDOFConstraint`s:
+
+- Translation X/Y/Z are fixed. A limb cannot separate from its parent by stretching a soft positional spring.
+- Angular motion is a cone or a pyramid of limits, expressed relative to the bind pose (the constraint frames coincide there, so the relative angle is zero).
+- Angular friction torque is the passive resistance. Presets scale it.
+- Motor settings (frequency, damping, torque limit) are stored on the constraint and left **off**. A later phase can enable torque-limited motors without changing the joint identity.
+
+Jolt 5.3 does not support soft angular limits. Compliance is friction plus body damping, not a pose spring. That is deliberate: a motor targeted at the bind pose would be a hidden muscle.
+
+## Character data
+
+`assets/configurations/humanoidguy.json` lists anatomical bodies and joints: bone names, masses, limit angles, and whether a joint is a cone, a pyramid, or a hinge-oriented pyramid (elbow, knee, hip flexion). The builder refuses to continue if a referenced bone is missing, if a skinned bone is not driven, or if the constraint graph is not a single component. Hips are connected because the JSON says so, not because the FBX node parent happens to be the pelvis. In this file the hip bones are siblings of the pelvis.
+
+## Rendering
+
+Each capsule mesh is rigidly weighted to one bone. Vertices are baked into that bone's local frame. Every frame the bone matrix is `bodyTransform * boneFromBody`, and the mesh is drawn with that matrix. Collision shapes are capsules or spheres derived from the bone segment and the mesh radius. They are not the render meshes.
+
+The viewport is a multisampled framebuffer (4x when the driver allows it) displayed in the docking layout. The default dock puts Hierarchy on the left, the viewport in the center, Inspector on the right, and Simulation / Physics / Diagnostics along the bottom.
+
+## Identifiers
+
+Every physical body keeps the anatomical id from the JSON (`pelvis`, `hip_1`, `thigh_1`, ...). Those ids are the stable names future balance, stepping, and injury controllers should use. The code does not assume a second character cannot be described by another JSON file with the same schema.

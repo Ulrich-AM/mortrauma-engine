@@ -1,0 +1,95 @@
+name: Windows Release
+
+on:
+  push:
+    branches: [main, "feature/**"]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure
+        run: cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $root = "package/MORTRAUMA"
+          New-Item -ItemType Directory -Force -Path $root | Out-Null
+          $exe = Get-ChildItem -Path build -Recurse -Filter MORTRAUMA.exe | Where-Object { $_.FullName -match "Release" } | Select-Object -First 1
+          if (-not $exe) { throw "MORTRAUMA.exe was not produced" }
+          Copy-Item $exe.FullName (Join-Path $root "MORTRAUMA.exe")
+          Get-ChildItem $exe.DirectoryName -Filter *.dll -ErrorAction SilentlyContinue | Copy-Item -Destination $root
+          Copy-Item -Recurse assets (Join-Path $root "assets")
+          New-Item -ItemType Directory -Force -Path (Join-Path $root "configurations") | Out-Null
+          Copy-Item assets/configurations/*.json (Join-Path $root "configurations")
+          Copy-Item -Recurse assets/configurations/presets (Join-Path $root "configurations/presets")
+          @"
+          MORTRAUMA v0.1.0
+          Physical Reactions Laboratory
+
+          Run MORTRAUMA.exe from this folder. Assets are loaded relative to the executable.
+
+          The MSVC runtime is linked statically. A Visual Studio install is not required.
+          An OpenGL 3.3 driver is required. The build enables AVX2 through Jolt Physics.
+
+          This package is a passive ragdoll. Press Play to simulate. It does not balance or walk.
+          See the repository docs for joint mapping, tests, and known limitations.
+          "@ | Set-Content -Encoding utf8 (Join-Path $root "README.txt")
+          if (Test-Path "MORTRAUMA-v0.1.0-Windows-x64.zip") { Remove-Item "MORTRAUMA-v0.1.0-Windows-x64.zip" }
+          Compress-Archive -Path $root -DestinationPath "MORTRAUMA-v0.1.0-Windows-x64.zip"
+
+      - name: Upload package
+        uses: actions/upload-artifact@v4
+        with:
+          name: MORTRAUMA-v0.1.0-Windows-x64
+          path: MORTRAUMA-v0.1.0-Windows-x64.zip
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download package
+        uses: actions/download-artifact@v4
+        with:
+          name: MORTRAUMA-v0.1.0-Windows-x64
+          path: dist
+
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tag="${GITHUB_REF_NAME}"
+          asset="dist/MORTRAUMA-v0.1.0-Windows-x64.zip"
+          test -f "$asset"
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "Release $tag already exists. Refusing to overwrite it."
+            exit 1
+          fi
+          gh release create "$tag" "$asset" \
+            --title "MORTRAUMA $tag" \
+            --notes-file docs/RELEASE_NOTES_v0.1.0.md
+          gh release view "$tag" --json tagName,assets --jq '.assets[].name'
