@@ -57,3 +57,13 @@ The pelvis support fixture is turned off when balance is enabled, and the balanc
 ## What this cannot do
 
 Round capsule feet have no sole. Ankle torque mostly rolls the capsule and then saturates against the contact. Two ankles at 12 N·m cannot reject a growing gravitational moment once the center of mass is more than a few centimetres ahead of the contact segment. There is no step. A quiet stand on the Normal preset holds the center of mass above 0.94 m and the torso under about 0.17 rad for the first second, then the lean runs away and the character falls. A 6 N·s push to the chest is not recovered. See `docs/BALANCE_TESTING.md`.
+
+## v0.3.1 feet
+
+`foot_1` and `foot_2` can request a box collider in the character JSON. The box is fitted in the body frame: local +Y stays the heel-to-toe bone, and the sole normal is the part of world up perpendicular to that bone. The box is rotated onto those axes with `RotatedTranslatedShape`, then `OffsetCenterOfMassShape` keeps the center of mass at the body origin. Edge rounding is 4 mm. The visual mesh is not changed. Other bodies stay capsules or spheres.
+
+The standing pose searches ankle twist, swing 1, and swing 2 so the sole normal points up, then shifts the hips so the center of mass sits toward the heel rather than the middle of the sole. The ankle joint is near the heel. A center of mass over the midfoot needs an ankle moment of roughly half the body weight times that lever, which is more than 12 N·m. Hip abduction in the pose is 14 degrees so the feet stay apart while the ankle can still level the sole inside its ±20 degree twist limit.
+
+Supporting contacts are labeled heel, midfoot, or forefoot by where they sit between the heel and forefoot reference points. The support area is the shoelace area of the contact hull. Fewer than three contacts is reported as not a polygon. Load is still a contact count.
+
+On the Normal preset the level soles and the heel-biased pose hold a quiet stand for about 1.4 s, then the character falls. Raising the ankle limit to 28 N·m or 48 N·m did not produce a 10 s stand, so the Active profile is unchanged at 12 N·m. Details and the failed trials are in `docs/BALANCE_STABILITY_COMPARISON.md`.

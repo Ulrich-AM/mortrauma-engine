@@ -40,7 +40,7 @@ Side index `_1` / `_2` is the name in the file. After import, `_1` is the positi
 | calf_1 / _2 | 3.6 | Calf_* | Calf to Heel |
 | foot_1 / _2 | 1.3 | Heel_*, Foot_*, Toes_* | Heel to Toes, plus 5 cm |
 
-Total mass is 77.5 kg. Connected mass ratios stay below 8:1 (chest 10 kg to neck 1.4 kg is the largest). Inertia comes from Jolt's capsule (or sphere, when the segment is shorter than the radius) scaled to the assigned mass. The capsule is centered on the body, along local +Y.
+Total mass is 77.5 kg. Connected mass ratios stay below 8:1 (chest 10 kg to neck 1.4 kg is the largest). Inertia comes from the collision shape scaled to the assigned mass. Capsules and spheres are centered on the body, along local +Y. A body may set `"collider": "box"`. The feet do. Their box is rotated in the body frame and the center of mass stays at the body origin. See `docs/FOOT_COLLISION.md`.
 
 Collision radius is the maximum distance from the bone segment to that body's mesh vertices, clamped to the per-body min/max in the JSON. Directly connected bodies, bodies two joints apart, and any pair whose bind-pose segments overlap have collisions disabled. The floor and props are outside the ragdoll collision group and always collide.
 

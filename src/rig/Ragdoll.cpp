@@ -4,6 +4,7 @@
 
 #include <cmath>
 #include <queue>
+#include <vector>
 #include <unordered_map>
 #include <unordered_set>
 
@@ -190,14 +191,108 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         info.linearDamping = preset.linearDamping;
         info.angularDamping = preset.angularDamping;
         info.collisionSubGroup = i;
-        if (full <= radius * 2.05f) {
+        std::vector<Vec3> footPoints;
+        if (spec.collider == ColliderKind::Box) {
+            for (const auto& mesh : model.meshes) {
+                if (mesh.bone < 0) {
+                    continue;
+                }
+                bool owned = false;
+                for (const auto& name : spec.bones) {
+                    if (model.bones[mesh.bone].name == name) {
+                        owned = true;
+                        break;
+                    }
+                }
+                if (!owned) {
+                    continue;
+                }
+                for (const auto& vertex : mesh.vertices) {
+                    const Vec3 worldPoint = transformPoint(model.bones[mesh.bone].bindWorld, vertex.position);
+                    footPoints.push_back(rotate(conjugate(rotation), worldPoint - center));
+                }
+            }
+        }
+        Vec3 soleNormal{0.f, 0.f, 1.f};
+        Vec3 soleForward{0.f, 1.f, 0.f};
+        Vec3 heelLocal{};
+        Vec3 foreLocal{};
+        Vec3 shapeCenter{};
+        if (footPoints.size() > 8) {
+            // Local +Y is the heel-to-toe bone. The sole normal is the part of
+            // world up perpendicular to that bone, so the ankle pitch that levels
+            // the bone also levels this face.
+            Vec3 forward{0.f, 1.f, 0.f};
+            Vec3 sole = rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f});
+            sole.y = 0.f;
+            if (length(sole) < 1e-4f) {
+                sole = {0.f, 0.f, 1.f};
+            }
+            sole = normalize(sole);
+            Vec3 lateral = cross(forward, sole);
+            if (length(lateral) < 1e-4f) {
+                lateral = {1.f, 0.f, 0.f};
+            }
+            lateral = normalize(lateral);
+            sole = normalize(cross(lateral, forward));
+            auto span = [&](Vec3 axis, float& minimum, float& maximum) {
+                minimum = 1e9f;
+                maximum = -1e9f;
+                for (const Vec3& point : footPoints) {
+                    const float projection = dot(point, axis);
+                    minimum = std::min(minimum, projection);
+                    maximum = std::max(maximum, projection);
+                }
+            };
+            float minX = 0.f;
+            float maxX = 0.f;
+            float minY = 0.f;
+            float maxY = 0.f;
+            float minZ = 0.f;
+            float maxZ = 0.f;
+            span(lateral, minX, maxX);
+            span(forward, minY, maxY);
+            span(sole, minZ, maxZ);
+            const Vec3 half{
+                std::max((maxX - minX) * 0.5f, 0.012f),
+                std::max((maxY - minY) * 0.5f, 0.012f),
+                std::max((maxZ - minZ) * 0.5f, 0.012f)};
+            shapeCenter = lateral * ((minX + maxX) * 0.5f) + forward * ((minY + maxY) * 0.5f) + sole * ((minZ + maxZ) * 0.5f);
+            Mat4 axes;
+            axes.m[0] = lateral.x;
+            axes.m[1] = lateral.y;
+            axes.m[2] = lateral.z;
+            axes.m[4] = forward.x;
+            axes.m[5] = forward.y;
+            axes.m[6] = forward.z;
+            axes.m[8] = sole.x;
+            axes.m[9] = sole.y;
+            axes.m[10] = sole.z;
+            info.shape = BodyCreateInfo::Shape::Box;
+            info.halfExtents = half;
+            info.shapeCenter = shapeCenter;
+            info.shapeRotation = axes.rotation();
+            info.convexRadius = 0.004f;
+            info.radius = std::max(half.x, std::max(half.y, half.z));
+            soleNormal = sole;
+            soleForward = forward;
+            heelLocal = shapeCenter + rotate(info.shapeRotation, Vec3{0.f, -half.y, -half.z});
+            foreLocal = shapeCenter + rotate(info.shapeRotation, Vec3{0.f, half.y, -half.z});
+            Log::info(spec.id + " sole box half " + std::to_string(half.x) + " " + std::to_string(half.y) + " " + std::to_string(half.z));
+        } else if (full <= radius * 2.05f) {
             info.shape = BodyCreateInfo::Shape::Sphere;
             info.radius = std::max(radius, full * 0.5f);
             info.halfHeight = 0.f;
+            soleNormal = normalize(rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f}));
+            heelLocal = soleNormal * -info.radius;
+            foreLocal = heelLocal;
         } else {
             info.shape = BodyCreateInfo::Shape::Capsule;
             info.radius = radius;
-            info.halfHeight = full * 0.5f - radius;
+            info.halfHeight = std::max(full * 0.5f - radius, 0.01f);
+            soleNormal = normalize(rotate(conjugate(rotation), Vec3{0.f, 1.f, 0.f}));
+            heelLocal = Vec3{0.f, -info.halfHeight, 0.f} + soleNormal * -info.radius;
+            foreLocal = Vec3{0.f, info.halfHeight, 0.f} + soleNormal * -info.radius;
         }
         const int physics = world.createBody(info);
         if (physics < 0) {
@@ -216,6 +311,15 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         body.segmentEnd = end;
         body.radius = info.radius;
         body.mass = spec.mass;
+        body.collider = info.shape;
+        body.boxHalfExtents = info.halfExtents;
+        body.shapeCenterLocal = info.shapeCenter;
+        body.capsuleRadius = radius;
+        body.shapeRotationLocal = info.shapeRotation;
+        body.soleNormalLocal = soleNormal;
+        body.soleForwardLocal = soleForward;
+        body.heelLocal = heelLocal;
+        body.forefootLocal = foreLocal;
         body.initialPosition = center;
         body.initialRotation = rotation;
         const Mat4 bodyWorld = Mat4::fromRotationTranslation(rotation, center);

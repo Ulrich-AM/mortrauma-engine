@@ -18,6 +18,16 @@ struct SupportEstimate {
     int rightPoints = 0;
     float leftLoadProxy = 0.f;
     float rightLoadProxy = 0.f;
+    int leftHeel = 0;
+    int leftMid = 0;
+    int leftFore = 0;
+    int rightHeel = 0;
+    int rightMid = 0;
+    int rightFore = 0;
+    float area = 0.f;
+    float leftArea = 0.f;
+    float rightArea = 0.f;
+    bool reliable = false;
     Vec3 center{};
     float margin = 0.f;
     std::vector<BalanceContact> contacts;

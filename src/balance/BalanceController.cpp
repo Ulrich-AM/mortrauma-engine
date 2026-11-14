@@ -208,8 +208,8 @@ void BalanceController::observe(const PhysicsWorld& world, const Ragdoll& ragdol
     const float sign = -1.f;
     measured.correction = measured.facing * (sign * forward) + measured.right * (sign * lateral);
     // The unloaded ankle angle is not the angle the floor will allow. After the
-    // feet take weight, hold the loaded angle so the 12 N·m budget is free for
-    // balance instead of being spent trying to twist the capsule.
+    // feet take weight, hold the loaded angle so the ankle budget is free for
+    // balance instead of being spent prying the sole off the floor.
     if (!anklesSettled_ && timeInPhase_ > 0.12f && (measured.leftGrounded || measured.rightGrounded) &&
         (state_.phase == BalancePhase::Initializing || state_.phase == BalancePhase::Standing || state_.phase == BalancePhase::Recovering)) {
         for (const auto& joint : ragdoll.joints) {
@@ -308,6 +308,8 @@ void BalanceController::command(const Ragdoll& ragdoll, MotorController& motors)
                                    joint.id == "hip_root_1" || joint.id == "hip_root_2" || joint.id == "spine_stomach" ||
                                    joint.id == "spine_chest" || joint.id == "spine_neck";
         const bool ankle = joint.id == "ankle_1" || joint.id == "ankle_2";
+        // Ankles and arms stay compliant. A high bandwidth on a 12 N·m ankle
+        // saturates against the floor and shoves the whole body.
         // Ankles and arms stay compliant. A high bandwidth on a 12 N·m ankle
         // saturates against the floor and shoves the whole body.
         entry.frequencyHz = weightBearing ? config_.motorFrequencyHz : (ankle ? std::min(config_.motorFrequencyHz, 40.f) : 4.f);

@@ -10,6 +10,8 @@ Implemented in v0.2.0. Torque-limited angular position motors drive constraint-s
 
 Implemented in v0.3.0 for one Humanoidguy. The controller reads a mass-weighted center of mass, real foot contacts, and a support hull, then submits ankle, hip, and torso targets through `MotorController::apply`. The ragdoll stays dynamic. There is no step and no get-up. On capsule feet the quiet stand holds for about a second and then falls. See `docs/BALANCE_SYSTEM.md` and `docs/BALANCE_TESTING.md`.
 
+v0.3.1 (M3.1) replaces the foot capsules with a flat sole box and levels that sole in the standing pose. Contacts are labeled heel, midfoot, or forefoot. The quiet stand on the unchanged Normal controller lasts about 1.4 s. The 10 s target was not reached. See `docs/FOOT_COLLISION.md` and `docs/BALANCE_STABILITY_COMPARISON.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.

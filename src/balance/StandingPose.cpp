@@ -1,5 +1,7 @@
 #include "mortrauma/balance/StandingPose.hpp"
 
+#include "mortrauma/core/Log.hpp"
+
 #include <algorithm>
 #include <cmath>
 #include <unordered_map>
@@ -70,6 +72,19 @@ float flexion(const RagdollJoint& joint, float degrees) {
 }
 
 float capsuleBottom(const ShapeView& shape) {
+    if (shape.shape == BodyCreateInfo::Shape::Box) {
+        float lowest = 1e9f;
+        const float signs[2] = {-1.f, 1.f};
+        for (float sx : signs) {
+            for (float sy : signs) {
+                for (float sz : signs) {
+                    const Vec3 local = shape.centerOffset + rotate(shape.shapeRotation, Vec3{sx * shape.halfExtents.x, sy * shape.halfExtents.y, sz * shape.halfExtents.z});
+                    lowest = std::min(lowest, (shape.position + rotate(shape.rotation, local)).y);
+                }
+            }
+        }
+        return lowest;
+    }
     if (shape.shape == BodyCreateInfo::Shape::Sphere || shape.halfHeight <= 0.f) {
         return shape.position.y - shape.radius;
     }
@@ -170,22 +185,21 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
             }
         }
     };
-    auto footPitch = [&](const std::string& footId) {
+    auto soleUp = [&](const std::string& footId) {
         const RagdollBody* foot = ragdoll.find(footId);
+        Vec3 up{0.f, 1.f, 0.f};
         if (foot == nullptr) {
-            return 0.f;
+            return up;
         }
-        int index = -1;
+        int index = pelvisIndex;
         for (int i = 0; i < int(ragdoll.bodies.size()); ++i) {
             if (ragdoll.bodies[i].id == footId) {
                 index = i;
             }
         }
-        const Vec3 local = rotate(conjugate(foot->initialRotation), foot->segmentEnd - foot->segmentStart);
-        const Vec3 direction = rotate(rotation[index], local);
-        const float scale = std::max(length(direction), 1e-4f);
-        return direction.y / scale;
+        return normalize(rotate(rotation[index], foot->soleNormalLocal));
     };
+    auto levelAnkles = [&]() {
     rebuild();
     for (const char* ankleId : {"ankle_1", "ankle_2"}) {
         const RagdollJoint* ankle = nullptr;
@@ -198,22 +212,42 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
             continue;
         }
         const std::string footId = ragdoll.bodies[ankle->child].id;
-        float bestDegrees = config.ankleFlexionDeg;
+        float bestTwist = 0.f;
+        float bestSwing1 = 0.f;
+        float bestSwing2 = config.ankleFlexionDeg;
         float bestScore = 1e9f;
-        const float lower = degrees(ankle->base.swing2Min);
-        const float upper = degrees(ankle->base.swing2Max);
-        for (float angle = lower; angle <= upper + 0.1f; angle += 2.f) {
-            reference[ankleId] = quatAxisAngle({0.f, 0.f, 1.f}, radians(std::min(angle, upper)));
-            rebuild();
-            const float pitch = footPitch(footId);
-            const float score = std::fabs(pitch) + (pitch < 0.f ? 0.35f : 0.f);
-            if (score < bestScore) {
-                bestScore = score;
-                bestDegrees = std::min(angle, upper);
+        const float x0 = degrees(ankle->base.twistMin);
+        const float x1 = degrees(ankle->base.twistMax);
+        const float y0 = degrees(ankle->base.swing1Min);
+        const float y1 = degrees(ankle->base.swing1Max);
+        const float z0 = degrees(ankle->base.swing2Min);
+        const float z1 = degrees(ankle->base.swing2Max);
+        for (float twist = x0; twist <= x1 + 0.1f; twist += 4.f) {
+            for (float swing1 = y0; swing1 <= y1 + 0.1f; swing1 += 3.f) {
+                for (float swing2 = z0; swing2 <= z1 + 0.1f; swing2 += 3.f) {
+                    const float x = std::min(twist, x1);
+                    const float y = std::min(swing1, y1);
+                    const float z = std::min(swing2, z1);
+                    reference[ankleId] = quatFromEulerXYZ(radians(x), radians(y), radians(z));
+                    rebuild();
+                    const Vec3 up = soleUp(footId);
+                    const float score = (1.f - up.y) + std::fabs(up.x) + std::fabs(up.z);
+                    if (score < bestScore) {
+                        bestScore = score;
+                        bestTwist = x;
+                        bestSwing1 = y;
+                        bestSwing2 = z;
+                    }
+                }
             }
         }
-        reference[ankleId] = quatAxisAngle({0.f, 0.f, 1.f}, radians(bestDegrees));
+        reference[ankleId] = quatFromEulerXYZ(radians(bestTwist), radians(bestSwing1), radians(bestSwing2));
+        Log::info(std::string(ankleId) + " sole angles twist " + std::to_string(bestTwist) + " swing1 " + std::to_string(bestSwing1) +
+                  " swing2 " + std::to_string(bestSwing2) + " score " + std::to_string(bestScore));
     }
+    rebuild();
+    };
+    levelAnkles();
     auto chestAxes = [&]() {
         const RagdollBody* chest = ragdoll.find("chest");
         Vec3 up{0.f, 1.f, 0.f};
@@ -254,7 +288,7 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
             for (const auto& joint : ragdoll.joints) {
                 if (joint.id == hipId) {
                     const float limited = clampf(radians(hipDegrees), joint.base.swing2Min + radians(2.f), joint.base.swing2Max - radians(2.f));
-                    const float spread = joint.id == "hip_1" ? radians(-18.f) : radians(18.f);
+                    const float spread = joint.id == "hip_1" ? radians(-14.f) : radians(14.f);
                     reference[hipId] = quatFromEulerXYZ(0.f, clampf(spread, joint.base.swing1Min, joint.base.swing1Max), limited);
                 }
             }
@@ -268,7 +302,11 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
             com = com + position[i] * ragdoll.bodies[i].mass;
             mass += ragdoll.bodies[i].mass;
             if (ragdoll.bodies[i].id == "foot_1" || ragdoll.bodies[i].id == "foot_2") {
-                feet = feet + position[i];
+                // The ankle sits near the heel. A mid-sole center of mass needs an
+                // ankle moment larger than the 12 N·m limit, so the target stays
+                // toward the heel, still on the sole.
+                const Vec3 support = ragdoll.bodies[i].heelLocal * 0.75f + ragdoll.bodies[i].forefootLocal * 0.25f;
+                feet = feet + position[i] + rotate(rotation[i], support);
                 ++footCount;
             }
         }
@@ -283,6 +321,7 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
         }
         hipDegrees = clampf(hipDegrees - error * 50.f, -25.f, 35.f);
     }
+    levelAnkles();
     rebuild();
     for (auto& command : placement.reference) {
         command.target = reference[command.jointId];
@@ -319,6 +358,23 @@ StandingPlacement placeStandingPose(PhysicsWorld& world, Ragdoll& ragdoll, const
         world.setBodyVelocity(ragdoll.bodies[i].physics, {}, {});
     }
     placement.footHeight = lowestFoot + lift;
+    for (const char* footId : {"foot_1", "foot_2"}) {
+        const RagdollBody* foot = ragdoll.find(footId);
+        if (foot == nullptr) {
+            continue;
+        }
+        int index = 0;
+        for (int i = 0; i < int(ragdoll.bodies.size()); ++i) {
+            if (ragdoll.bodies[i].id == footId) {
+                index = i;
+            }
+        }
+        const Vec3 up = normalize(rotate(rotation[index], foot->soleNormalLocal));
+        const Vec3 heel = position[index] + rotate(rotation[index], foot->heelLocal);
+        const Vec3 toe = position[index] + rotate(rotation[index], foot->forefootLocal);
+        Log::info(std::string(footId) + " soleUp " + std::to_string(up.x) + " " + std::to_string(up.y) + " " + std::to_string(up.z) +
+                  " heelY " + std::to_string(heel.y) + " toeY " + std::to_string(toe.y));
+    }
 
     placement.maxSeparation = 0.f;
     for (const auto& joint : ragdoll.joints) {

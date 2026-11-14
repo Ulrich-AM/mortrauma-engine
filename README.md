@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.3.0 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand: one Humanoidguy estimates its center of mass and foot contacts and commands joint targets. It does not walk, step, get up, or grab on its own. If the stand fails, the body falls. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
+MORTRAUMA v0.3.1 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand. v0.3.1 gives the feet a flat sole collider fitted to the visible mesh and levels that sole before the controller runs. One Humanoidguy estimates its center of mass and foot contacts and commands joint targets. It does not walk, step, get up, or grab on its own. If the stand fails, the body falls. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 

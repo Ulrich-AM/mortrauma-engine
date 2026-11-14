@@ -17,11 +17,11 @@
     {"id": "hip_1", "name": "Hip 1", "bones": ["Hip_1"], "primary_bone": "Hip_1", "end_bone": "Thigh_1", "end_extension": 0.0, "mass": 2.2, "min_radius": 0.05, "max_radius": 0.1},
     {"id": "thigh_1", "name": "Thigh 1", "bones": ["Thigh_1"], "primary_bone": "Thigh_1", "end_bone": "Calf_1", "end_extension": 0.0, "mass": 8.0, "min_radius": 0.06, "max_radius": 0.12},
     {"id": "calf_1", "name": "Calf 1", "bones": ["Calf_1"], "primary_bone": "Calf_1", "end_bone": "Heel_1", "end_extension": 0.0, "mass": 3.6, "min_radius": 0.05, "max_radius": 0.1},
-    {"id": "foot_1", "name": "Foot 1", "bones": ["Heel_1", "Foot_1", "Toes_1"], "primary_bone": "Heel_1", "end_bone": "Toes_1", "end_extension": 0.05, "mass": 1.3, "min_radius": 0.04, "max_radius": 0.08},
+    {"id": "foot_1", "name": "Foot 1", "bones": ["Heel_1", "Foot_1", "Toes_1"], "primary_bone": "Heel_1", "end_bone": "Toes_1", "end_extension": 0.05, "mass": 1.3, "min_radius": 0.04, "max_radius": 0.08, "collider": "box"},
     {"id": "hip_2", "name": "Hip 2", "bones": ["Hip_2"], "primary_bone": "Hip_2", "end_bone": "Thigh_2", "end_extension": 0.0, "mass": 2.2, "min_radius": 0.05, "max_radius": 0.1},
     {"id": "thigh_2", "name": "Thigh 2", "bones": ["Thigh_2"], "primary_bone": "Thigh_2", "end_bone": "Calf_2", "end_extension": 0.0, "mass": 8.0, "min_radius": 0.06, "max_radius": 0.12},
     {"id": "calf_2", "name": "Calf 2", "bones": ["Calf_2"], "primary_bone": "Calf_2", "end_bone": "Heel_2", "end_extension": 0.0, "mass": 3.6, "min_radius": 0.05, "max_radius": 0.1},
-    {"id": "foot_2", "name": "Foot 2", "bones": ["Heel_2", "Foot_2", "Toes_2"], "primary_bone": "Heel_2", "end_bone": "Toes_2", "end_extension": 0.05, "mass": 1.3, "min_radius": 0.04, "max_radius": 0.08}
+    {"id": "foot_2", "name": "Foot 2", "bones": ["Heel_2", "Foot_2", "Toes_2"], "primary_bone": "Heel_2", "end_bone": "Toes_2", "end_extension": 0.05, "mass": 1.3, "min_radius": 0.04, "max_radius": 0.08, "collider": "box"}
   ],
   "joints": [
     {"id": "spine_stomach", "name": "Spine (pelvis-stomach)", "parent": "pelvis", "child": "stomach", "swing": "pyramid", "orient": "none", "limits_deg": {"twist_min": -15, "twist_max": 15, "swing1_min": -18, "swing1_max": 18, "swing2_min": -18, "swing2_max": 18}},

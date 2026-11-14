@@ -19,7 +19,21 @@ struct RagdollBody {
     Vec3 segmentStart{};
     Vec3 segmentEnd{};
     float radius = 0.f;
+    // Mesh-derived capsule radius, kept so the foot can be compared with the
+    // v0.3.0 collider without refitting the mesh.
+    float capsuleRadius = 0.06f;
     float mass = 1.f;
+    BodyCreateInfo::Shape collider = BodyCreateInfo::Shape::Capsule;
+    Vec3 boxHalfExtents{};
+    // Collider center, sole normal, and sole points are in the rigid body's
+    // local frame. The sole normal points up, away from the ground, when the
+    // sole is planted. Heel and forefoot lie on the opposite face.
+    Vec3 shapeCenterLocal{};
+    Quat shapeRotationLocal{};
+    Vec3 soleNormalLocal{0.f, 0.f, 1.f};
+    Vec3 soleForwardLocal{0.f, 1.f, 0.f};
+    Vec3 heelLocal{};
+    Vec3 forefootLocal{};
     Vec3 initialPosition{};
     Quat initialRotation{};
     // boneBind = bodyBind * boneFromBody. Stored as body-local bone transform.

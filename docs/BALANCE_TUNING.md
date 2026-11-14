@@ -2,6 +2,8 @@
 
 Presets live in `assets/configurations/balance/`. They scale the controller. They do not change the Active profile's torque limits, the joint limits, or the floor friction (0.9 in `assets/environments/standing.json`).
 
+v0.3.1 did not change the Normal gains or the 12 N·m ankle limit. A trial at 28 N·m still fell during the second second (center of mass down to 0.60 m). A trial at 48 N·m fell faster, because the ankle spring reaches that cap over a fraction of a degree and shoves the sole. Those limits were reverted. Foot friction stays 0.7.
+
 | Field | Unit | Role |
 | --- | --- | --- |
 | `balance_strength` | scale, 0–1.5 | Multiplies torque and, through activation, the servo frequency |

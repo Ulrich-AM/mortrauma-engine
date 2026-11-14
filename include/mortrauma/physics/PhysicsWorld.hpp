@@ -26,6 +26,13 @@ struct BodyCreateInfo {
     float radius = 0.08f;
     float halfHeight = 0.1f;  // cylindrical half-height for capsules
     Vec3 halfExtents{0.1f, 0.1f, 0.1f};
+    // Geometry center in the body's local frame. The center of mass stays at
+    // the body origin; this only moves the collider.
+    Vec3 shapeCenter{};
+    // Box axes in the body frame. Identity keeps the box aligned with the body.
+    Quat shapeRotation{};
+    // Edge rounding for boxes. The outer size stays halfExtents.
+    float convexRadius = 0.05f;
     float mass = 1.f;
     float friction = 0.7f;
     float restitution = 0.02f;
@@ -180,6 +187,8 @@ struct ShapeView {
     float radius = 0.f;
     float halfHeight = 0.f;
     Vec3 halfExtents{};
+    Vec3 centerOffset{};
+    Quat shapeRotation{};
 };
 
 // Jolt adapter. The public surface is creation, deletion, configuration and
@@ -197,6 +206,8 @@ public:
     bool isReady() const { return ready_; }
 
     int createBody(const BodyCreateInfo& info);
+    // Replaces a dynamic body's collider and inertia. Mass is unchanged.
+    bool setBodyShape(int body, const BodyCreateInfo& info);
     void destroyBody(int body);
     int createJoint(const JointCreateInfo& info);
     void destroyJoint(int joint);

@@ -77,6 +77,33 @@ BalanceState BalanceEstimator::measure(const PhysicsWorld& world, const Ragdoll&
     state.rightPoints = support.rightPoints;
     state.leftLoadProxy = support.leftLoadProxy;
     state.rightLoadProxy = support.rightLoadProxy;
+    state.leftHeel = support.leftHeel;
+    state.leftMid = support.leftMid;
+    state.leftFore = support.leftFore;
+    state.rightHeel = support.rightHeel;
+    state.rightMid = support.rightMid;
+    state.rightFore = support.rightFore;
+    state.supportArea = support.area;
+    state.leftArea = support.leftArea;
+    state.rightArea = support.rightArea;
+    state.supportReliable = support.reliable;
+    auto soleOf = [&](const char* footId, float& pitch, float& roll, float& heelClearance, float& foreClearance) {
+        const RagdollBody* foot = findBody(ragdoll, footId);
+        if (foot == nullptr) {
+            return;
+        }
+        const BodyState sample = world.bodyState(foot->physics);
+        if (!sample.valid) {
+            return;
+        }
+        const Vec3 up = normalize(rotate(sample.rotation, foot->soleNormalLocal));
+        pitch = std::atan2(dot(up, state.facing), std::max(up.y, 0.05f));
+        roll = std::atan2(dot(up, state.right), std::max(up.y, 0.05f));
+        heelClearance = (sample.position + rotate(sample.rotation, foot->heelLocal)).y;
+        foreClearance = (sample.position + rotate(sample.rotation, foot->forefootLocal)).y;
+    };
+    soleOf("foot_2", state.leftSolePitch, state.leftSoleRoll, state.leftHeelClearance, state.leftForeClearance);
+    soleOf("foot_1", state.rightSolePitch, state.rightSoleRoll, state.rightHeelClearance, state.rightForeClearance);
     state.contacts = support.contacts;
     state.hull = support.hull;
     state.supportCenter = support.center;

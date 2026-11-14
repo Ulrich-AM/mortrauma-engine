@@ -121,6 +121,7 @@ struct App {
     bool playing = false;
     bool wireframe = false;
     bool showCollision = false;
+    bool capsuleFeet = false;
     bool showJoints = true;
     bool showContacts = false;
     bool showCenters = false;
@@ -331,6 +332,36 @@ struct App {
         }
     }
 
+    void applyFootComparison(bool capsules) {
+        for (const char* footId : {"foot_1", "foot_2"}) {
+            const auto* foot = ragdoll.find(footId);
+            if (foot == nullptr) {
+                continue;
+            }
+            BodyCreateInfo info;
+            info.name = foot->name;
+            info.mass = foot->mass;
+            info.friction = 0.7f;
+            if (capsules) {
+                info.shape = BodyCreateInfo::Shape::Capsule;
+                info.radius = std::max(foot->capsuleRadius, 0.04f);
+                const float length = mt::length(foot->segmentEnd - foot->segmentStart);
+                info.halfHeight = std::max(length * 0.5f - info.radius, 0.01f);
+            } else {
+                info.shape = BodyCreateInfo::Shape::Box;
+                info.halfExtents = foot->boxHalfExtents;
+                info.shapeCenter = foot->shapeCenterLocal;
+                info.shapeRotation = foot->shapeRotationLocal;
+                info.convexRadius = 0.004f;
+            }
+            if (!world.setBodyShape(foot->physics, info)) {
+                poseMessage = "Foot collider swap failed for " + foot->name + ".";
+                return;
+            }
+        }
+        poseMessage = capsules ? "Feet are using the capsule comparison collider." : "Feet are using the flat sole collider.";
+    }
+
     void resetToStanding() {
         releaseGrab();
         world.endSupport();
@@ -500,7 +531,9 @@ struct App {
             const auto viewShape = world.shapeView(body.physics);
             const Vec3 color = body.physics == selectedBody ? Vec3{0.95f, 0.78f, 0.25f} : Vec3{0.34f, 0.36f, 0.4f};
             if (viewShape.shape == BodyCreateInfo::Shape::Box) {
-                renderer.drawBox(viewShape.position, viewShape.rotation, viewShape.halfExtents, color);
+                const Vec3 center = viewShape.position + rotate(viewShape.rotation, viewShape.centerOffset);
+                const Quat orient = normalize(mul(viewShape.rotation, viewShape.shapeRotation));
+                renderer.drawBox(center, orient, viewShape.halfExtents, color);
             }
         }
         if (showCollision || (selection == SelectionKind::Body && selectedBody >= 0)) {
@@ -511,7 +544,9 @@ struct App {
                 } else if (viewShape.shape == BodyCreateInfo::Shape::Sphere) {
                     renderer.drawSphere(viewShape.position, viewShape.radius, color);
                 } else {
-                    renderer.drawBox(viewShape.position, viewShape.rotation, viewShape.halfExtents, color);
+                    const Vec3 center = viewShape.position + rotate(viewShape.rotation, viewShape.centerOffset);
+                    const Quat orient = normalize(mul(viewShape.rotation, viewShape.shapeRotation));
+                    renderer.drawBox(center, orient, viewShape.halfExtents, color);
                 }
             };
             if (showCollision) {
@@ -607,6 +642,43 @@ struct App {
             }
             if (overlays.showCorrection && length(balanceState.correction) > 1e-4f) {
                 renderer.drawLine(balanceState.comProjection, balanceState.comProjection + balanceState.correction, {1.f, 0.35f, 0.8f});
+            }
+            if (overlays.showSoleFrame || overlays.showHeel || overlays.showForefoot || overlays.showFootCollider) {
+                for (const char* footId : {"foot_1", "foot_2"}) {
+                    const auto* foot = ragdoll.find(footId);
+                    if (foot == nullptr) {
+                        continue;
+                    }
+                    const auto sample = world.bodyState(foot->physics);
+                    if (!sample.valid) {
+                        continue;
+                    }
+                    const Vec3 heel = sample.position + rotate(sample.rotation, foot->heelLocal);
+                    const Vec3 toe = sample.position + rotate(sample.rotation, foot->forefootLocal);
+                    const Vec3 up = normalize(rotate(sample.rotation, foot->soleNormalLocal));
+                    const Vec3 side = normalize(rotate(sample.rotation, cross(foot->soleForwardLocal, foot->soleNormalLocal)));
+                    if (overlays.showHeel) {
+                        renderer.drawLine(heel - side * 0.03f, heel + side * 0.03f, {0.95f, 0.55f, 0.2f});
+                    }
+                    if (overlays.showForefoot) {
+                        renderer.drawLine(toe - side * 0.03f, toe + side * 0.03f, {0.3f, 0.75f, 0.95f});
+                    }
+                    if (overlays.showSoleFrame) {
+                        const Vec3 origin = (heel + toe) * 0.5f;
+                        renderer.drawLine(origin, origin + up * 0.12f, {0.9f, 0.9f, 0.95f});
+                        renderer.drawLine(heel, toe, {0.85f, 0.7f, 0.3f});
+                    }
+                    if (overlays.showFootCollider) {
+                        const auto viewShape = world.shapeView(foot->physics);
+                        const Vec3 center = viewShape.position + rotate(viewShape.rotation, viewShape.centerOffset);
+                        const Quat orient = normalize(mul(viewShape.rotation, viewShape.shapeRotation));
+                        if (viewShape.shape == BodyCreateInfo::Shape::Box) {
+                            renderer.drawBox(center, orient, viewShape.halfExtents, {0.75f, 0.45f, 0.25f});
+                        } else if (viewShape.shape == BodyCreateInfo::Shape::Capsule) {
+                            renderer.drawCapsule(viewShape.position, viewShape.rotation, viewShape.radius, viewShape.halfHeight, {0.45f, 0.55f, 0.75f});
+                        }
+                    }
+                }
             }
         }
         renderer.endScene();
@@ -783,6 +855,27 @@ struct App {
         ImGui::Checkbox("Torso upright", &view.showTorso);
         ImGui::SameLine();
         ImGui::Checkbox("Correction", &view.showCorrection);
+        if (ImGui::CollapsingHeader("Foot contact")) {
+            ImGui::Text("Right sole pitch %.1f deg  roll %.1f deg", degrees(state.rightSolePitch), degrees(state.rightSoleRoll));
+            ImGui::Text("Left sole pitch %.1f deg  roll %.1f deg", degrees(state.leftSolePitch), degrees(state.leftSoleRoll));
+            ImGui::Text("Right clearance heel %.3f m  forefoot %.3f m", state.rightHeelClearance, state.rightForeClearance);
+            ImGui::Text("Left clearance heel %.3f m  forefoot %.3f m", state.leftHeelClearance, state.leftForeClearance);
+            ImGui::Text("Right contacts heel %d  mid %d  fore %d", state.rightHeel, state.rightMid, state.rightFore);
+            ImGui::Text("Left contacts heel %d  mid %d  fore %d", state.leftHeel, state.leftMid, state.leftFore);
+            ImGui::Text("Support area %.4f m^2  (%s)  margin %+0.3f m", state.supportArea, state.supportReliable ? "from contacts" : "not a polygon",
+                        state.margin);
+            ImGui::TextUnformatted("Load values above are contact counts, not forces.");
+            ImGui::Checkbox("Foot collider", &view.showFootCollider);
+            ImGui::SameLine();
+            ImGui::Checkbox("Sole frame", &view.showSoleFrame);
+            ImGui::Checkbox("Heel marks", &view.showHeel);
+            ImGui::SameLine();
+            ImGui::Checkbox("Forefoot marks", &view.showForefoot);
+            if (ImGui::Checkbox("Capsule feet for comparison (resets the pose)", &capsuleFeet)) {
+                applyFootComparison(capsuleFeet);
+                resetToStanding();
+            }
+        }
         auto plot = [&](const char* label, float BalanceSample::*field) {
             const auto& history = view.history;
             if (history.size() < 2) {
@@ -1535,7 +1628,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.0 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.1 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

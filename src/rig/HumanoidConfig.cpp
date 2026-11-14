@@ -63,6 +63,14 @@ CharacterConfig loadCharacterConfig(const std::string& path) {
         body.maxRadius = item.value("max_radius", 0.2f);
         body.friction = item.value("friction", 0.7f);
         body.restitution = item.value("restitution", 0.02f);
+        const std::string collider = item.value("collider", "auto");
+        if (collider == "box") {
+            body.collider = ColliderKind::Box;
+        } else if (collider == "capsule") {
+            body.collider = ColliderKind::Capsule;
+        } else {
+            body.collider = ColliderKind::Auto;
+        }
         if (item.contains("bones")) {
             for (const auto& bone : item["bones"]) {
                 body.bones.push_back(bone.get<std::string>());

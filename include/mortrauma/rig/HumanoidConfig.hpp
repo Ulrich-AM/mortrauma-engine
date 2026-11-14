@@ -7,6 +7,9 @@ namespace mt {
 
 enum class SwingKind { Cone, Pyramid };
 enum class BendOrient { None, Elbow, Knee, Hip };
+// Auto keeps the capsule/sphere fit. Box uses the visual mesh bounds as a
+// rounded box in the rigid body's local frame.
+enum class ColliderKind { Auto, Capsule, Box };
 
 struct BodyConfig {
     std::string id;
@@ -21,6 +24,7 @@ struct BodyConfig {
     float maxRadius = 0.2f;
     float friction = 0.7f;
     float restitution = 0.02f;
+    ColliderKind collider = ColliderKind::Auto;
 };
 
 struct JointConfig {

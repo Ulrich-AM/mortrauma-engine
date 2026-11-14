@@ -572,6 +572,8 @@ void runGrabTest(const std::string& which);
 void runAllGrabTests();
 void runBalanceTest(const std::string& which);
 void runAllBalanceTests();
+void runFootTest(const std::string& which);
+void runAllFootTests();
 
 int main(int argc, char** argv) {
     const std::string which = argc > 1 ? argv[1] : "ALL";
@@ -582,6 +584,11 @@ int main(int argc, char** argv) {
     }
     if (which.rfind("GRAB-", 0) == 0) {
         runGrabTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which.rfind("FOOT-", 0) == 0) {
+        runFootTest(which);
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
@@ -682,6 +689,7 @@ int main(int argc, char** argv) {
     if (which == "ALL") {
         runAllMotorTests();
         runAllGrabTests();
+        runAllFootTests();
         runAllBalanceTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&

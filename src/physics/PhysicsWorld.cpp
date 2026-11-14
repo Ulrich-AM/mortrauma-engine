@@ -18,6 +18,8 @@
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/Shape/BoxShape.h>
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
+#include <Jolt/Physics/Collision/Shape/OffsetCenterOfMassShape.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
 #include <Jolt/Physics/Collision/Shape/SphereShape.h>
 #include <Jolt/Physics/Constraints/SixDOFConstraint.h>
 #include <Jolt/Physics/PhysicsSystem.h>
@@ -281,24 +283,37 @@ void PhysicsWorld::shutdown() {
     }
 }
 
+JPH::Ref<JPH::Shape> makeShape(const BodyCreateInfo& info) {
+    if (info.shape == BodyCreateInfo::Shape::Sphere || (info.shape == BodyCreateInfo::Shape::Capsule && info.halfHeight <= 0.001f)) {
+        const float radius = std::max(info.radius, 0.02f);
+        return new JPH::SphereShape(radius);
+    }
+    if (info.shape == BodyCreateInfo::Shape::Capsule) {
+        const float radius = std::max(info.radius, 0.02f);
+        const float halfHeight = std::max(info.halfHeight, 0.01f);
+        return new JPH::CapsuleShape(halfHeight, radius);
+    }
+    const float hx = std::max(info.halfExtents.x, 0.01f);
+    const float hy = std::max(info.halfExtents.y, 0.01f);
+    const float hz = std::max(info.halfExtents.z, 0.01f);
+    const float limit = 0.25f * std::min(hx, std::min(hy, hz));
+    const float convex = clampf(info.convexRadius, 0.001f, std::max(limit, 0.001f));
+    JPH::Ref<JPH::Shape> box = new JPH::BoxShape(JPH::Vec3(hx, hy, hz), convex);
+    const bool rotated = quatAngle(info.shapeRotation) > 1e-4f;
+    const bool shifted = length(info.shapeCenter) > 1e-5f;
+    if (!rotated && !shifted) {
+        return box;
+    }
+    JPH::Ref<JPH::Shape> placed = new JPH::RotatedTranslatedShape(toV(info.shapeCenter), toJolt(info.shapeRotation), box.GetPtr());
+    return new JPH::OffsetCenterOfMassShape(placed.GetPtr(), toV(-info.shapeCenter));
+}
+
 int PhysicsWorld::createBody(const BodyCreateInfo& info) {
     if (!ready_) {
         Log::error("createBody called before physics initialization.");
         return -1;
     }
-    JPH::Ref<JPH::Shape> shape;
-    if (info.shape == BodyCreateInfo::Shape::Sphere || (info.shape == BodyCreateInfo::Shape::Capsule && info.halfHeight <= 0.001f)) {
-        const float radius = std::max(info.radius, 0.02f);
-        shape = new JPH::SphereShape(radius);
-    } else if (info.shape == BodyCreateInfo::Shape::Capsule) {
-        const float radius = std::max(info.radius, 0.02f);
-        const float halfHeight = std::max(info.halfHeight, 0.01f);
-        shape = new JPH::CapsuleShape(halfHeight, radius);
-    } else {
-        const JPH::Vec3 half(std::max(info.halfExtents.x, 0.01f), std::max(info.halfExtents.y, 0.01f),
-                             std::max(info.halfExtents.z, 0.01f));
-        shape = new JPH::BoxShape(half);
-    }
+    JPH::Ref<JPH::Shape> shape = makeShape(info);
 
     const JPH::EMotionType motion =
         info.isStatic ? JPH::EMotionType::Static : (info.isKinematic ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic);
@@ -818,7 +833,34 @@ ShapeView PhysicsWorld::shapeView(int body) const {
     view.radius = impl_->bodies[body].shape.radius;
     view.halfHeight = impl_->bodies[body].shape.halfHeight;
     view.halfExtents = impl_->bodies[body].shape.halfExtents;
+    view.centerOffset = impl_->bodies[body].shape.shapeCenter;
+    view.shapeRotation = impl_->bodies[body].shape.shapeRotation;
     return view;
+}
+
+bool PhysicsWorld::setBodyShape(int body, const BodyCreateInfo& info) {
+    if (!ready_ || body < 0 || body >= int(impl_->bodies.size()) || !impl_->bodies[body].alive) {
+        Log::error("Shape replacement rejected for a missing body.");
+        return false;
+    }
+    JPH::Ref<JPH::Shape> shape = makeShape(info);
+    auto& record = impl_->bodies[body];
+    const float mass = std::max(info.mass, 0.05f);
+    JPH::MassProperties properties = shape->GetMassProperties();
+    properties.ScaleToMass(mass);
+    {
+        JPH::BodyLockWrite lock(impl_->system.GetBodyLockInterface(), record.id);
+        if (!lock.Succeeded() || lock.GetBody().GetMotionProperties() == nullptr) {
+            Log::error("Shape replacement could not lock '" + record.name + "'.");
+            return false;
+        }
+        lock.GetBody().GetMotionProperties()->SetMassProperties(JPH::EAllowedDOFs::All, properties);
+    }
+    impl_->bodiesApi().SetShape(record.id, shape.GetPtr(), false, JPH::EActivation::Activate);
+    record.shape = info;
+    record.shape.mass = mass;
+    record.shape.radius = info.shape == BodyCreateInfo::Shape::Box ? 0.f : (info.radius > 0.f ? info.radius : 0.05f);
+    return true;
 }
 
 int PhysicsWorld::beginGrab(int body, Vec3 bodyPointWorld, Vec3 targetWorld, float frequency, float damping) {
