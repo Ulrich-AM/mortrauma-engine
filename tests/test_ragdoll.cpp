@@ -308,6 +308,242 @@ void testPhy005() {
     expect(worst < 1e-4f, "PHY-005 identical replay within 0.1 mm");
 }
 
+const mt::RagdollJoint* findJoint(const Lab& lab, const std::string& id) {
+    for (const auto& joint : lab.ragdoll.joints) {
+        if (joint.id == id) {
+            return &joint;
+        }
+    }
+    return nullptr;
+}
+
+mt::Quat basisQuat(mt::Vec3 x, mt::Vec3 y, mt::Vec3 z) {
+    mt::Mat4 matrix;
+    matrix.m[0] = x.x;
+    matrix.m[1] = x.y;
+    matrix.m[2] = x.z;
+    matrix.m[4] = y.x;
+    matrix.m[5] = y.y;
+    matrix.m[6] = y.z;
+    matrix.m[8] = z.x;
+    matrix.m[9] = z.y;
+    matrix.m[10] = z.z;
+    return matrix.rotation();
+}
+
+void poseSwing(Lab& lab, const mt::RagdollJoint& joint, float swing2) {
+    const auto& child = lab.ragdoll.bodies[joint.child];
+    const mt::Vec3 worldX = mt::normalize(joint.extensionAxis * std::cos(swing2) + joint.flexionDirection * std::sin(swing2));
+    const mt::Vec3 worldZ = mt::normalize(joint.flexionAxis);
+    const mt::Vec3 worldY = mt::normalize(mt::cross(worldZ, worldX));
+    const mt::Vec3 localX = mt::normalize(mt::rotate(mt::conjugate(child.initialRotation), child.segmentEnd - child.segmentStart));
+    mt::Vec3 localZ = mt::rotate(mt::conjugate(child.initialRotation), joint.flexionAxis);
+    localZ = localZ - localX * mt::dot(localZ, localX);
+    localZ = mt::normalize(localZ);
+    const mt::Vec3 localY = mt::normalize(mt::cross(localZ, localX));
+    const mt::Quat rotation = mt::mul(basisQuat(worldX, worldY, worldZ), mt::conjugate(basisQuat(localX, localY, localZ)));
+    const mt::Vec3 centerLocal = mt::rotate(mt::conjugate(child.initialRotation), child.initialPosition - child.segmentStart);
+    lab.world.setBodyPose(child.physics, child.segmentStart + mt::rotate(rotation, centerLocal), rotation, true);
+}
+
+float geometricBend(const Lab& lab, const mt::RagdollJoint& joint) {
+    const auto& parent = lab.ragdoll.bodies[joint.parent];
+    const auto& child = lab.ragdoll.bodies[joint.child];
+    const auto parentState = lab.world.bodyState(parent.physics);
+    const auto childState = lab.world.bodyState(child.physics);
+    const mt::Vec3 parentLocal = mt::rotate(mt::conjugate(parent.initialRotation), parent.segmentEnd - parent.segmentStart);
+    const mt::Vec3 childLocal = mt::rotate(mt::conjugate(child.initialRotation), child.segmentEnd - child.segmentStart);
+    const mt::Vec3 parentDir = mt::normalize(mt::rotate(parentState.rotation, parentLocal));
+    const mt::Vec3 childDir = mt::normalize(mt::rotate(childState.rotation, childLocal));
+    return std::acos(mt::clampf(mt::dot(parentDir, childDir), -1.f, 1.f));
+}
+
+void testRig004(Lab& lab) {
+    mt::resetRagdoll(lab.world, lab.ragdoll);
+    const char* ids[] = {"elbow_1", "elbow_2", "knee_1", "knee_2"};
+    for (const char* id : ids) {
+        const auto* joint = findJoint(lab, id);
+        expect(joint != nullptr, std::string(id) + " exists");
+        if (joint == nullptr) {
+            continue;
+        }
+        const auto bind = lab.world.jointState(joint->physics);
+        const float geometric = geometricBend(lab, *joint);
+        std::cout << id << " before-correction equivalent was 0 deg at a geometric bend of " << mt::degrees(geometric)
+                  << " deg; measured swing2 now " << mt::degrees(bind.rotationRadians.z) << " deg\n";
+        expect(std::fabs(bind.rotationRadians.x) < mt::radians(4.f), std::string(id) + " bind twist is near zero");
+        expect(std::fabs(bind.rotationRadians.y) < mt::radians(4.f), std::string(id) + " bind side swing is near zero");
+        expect(bind.rotationRadians.z > mt::radians(60.f) && bind.rotationRadians.z < mt::radians(110.f),
+               std::string(id) + " bind pose is flexed, not treated as extension");
+        expect(std::fabs(bind.rotationRadians.z - geometric) < mt::radians(4.f),
+               std::string(id) + " swing2 matches the geometric bend");
+        expect(bind.withinLimits, std::string(id) + " crouched bind pose is inside the anatomical limits");
+
+        poseSwing(lab, *joint, 0.f);
+        const auto straight = lab.world.jointState(joint->physics);
+        std::cout << id << " straight pose swing2 " << mt::degrees(straight.rotationRadians.z) << " separation " << straight.separation
+                  << "\n";
+        expect(std::fabs(straight.rotationRadians.z) < mt::radians(4.f), std::string(id) + " full extension reads near 0 deg");
+        expect(straight.withinLimits, std::string(id) + " full extension is inside the limits");
+        expect(straight.separation < 0.01f, std::string(id) + " extension keeps the pivot attached");
+
+        poseSwing(lab, *joint, mt::radians(-25.f));
+        const auto hyper = lab.world.jointState(joint->physics);
+        expect(!hyper.withinLimits, std::string(id) + " 25 deg hyperextension is outside the limits");
+
+        poseSwing(lab, *joint, mt::radians(160.f));
+        const auto folded = lab.world.jointState(joint->physics);
+        expect(!folded.withinLimits, std::string(id) + " 160 deg flexion is outside the 145 deg limit");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+    }
+}
+
+void testRig005(Lab& lab) {
+    mt::resetRagdoll(lab.world, lab.ragdoll);
+    const char* ids[] = {"elbow_1", "elbow_2", "knee_1", "knee_2"};
+    for (const char* id : ids) {
+        const auto* joint = findJoint(lab, id);
+        if (joint == nullptr) {
+            expect(false, std::string(id) + " exists");
+            continue;
+        }
+        const float bind = lab.world.jointState(joint->physics).rotationRadians.z;
+        poseSwing(lab, *joint, bind + mt::radians(20.f));
+        const float flexed = lab.world.jointState(joint->physics).rotationRadians.z;
+        std::cout << id << " bend direction " << mt::degrees(bind) << " -> " << mt::degrees(flexed) << "\n";
+        expect(flexed > bind + mt::radians(12.f), std::string(id) + " positive swing2 increases flexion on this side");
+        expect(lab.world.jointState(joint->physics).withinLimits, std::string(id) + " 20 deg more flexion stays inside 145");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+    }
+}
+
+void testRig006(Lab& lab) {
+    mt::resetRagdoll(lab.world, lab.ragdoll);
+    for (const char* id : {"hip_1", "hip_2"}) {
+        const auto* joint = findJoint(lab, id);
+        expect(joint != nullptr, std::string(id) + " exists");
+        if (joint == nullptr) {
+            continue;
+        }
+        const auto bind = lab.world.jointState(joint->physics);
+        std::cout << id << " bind twist/abduction/flexion " << mt::degrees(bind.rotationRadians.x) << " "
+                  << mt::degrees(bind.rotationRadians.y) << " " << mt::degrees(bind.rotationRadians.z) << "\n";
+        expect(bind.rotationRadians.z > mt::radians(50.f) && bind.rotationRadians.z < mt::radians(100.f),
+               std::string(id) + " crouched thigh is flexed forward from vertical");
+        expect(bind.withinLimits, std::string(id) + " crouched hip is inside the anatomical range");
+        expect(std::fabs(bind.rotationRadians.y) < mt::radians(50.f), std::string(id) + " abduction is not inverted past 50 deg");
+
+        poseSwing(lab, *joint, 0.f);
+        const auto extended = lab.world.jointState(joint->physics);
+        std::cout << id << " thigh-down swing2 " << mt::degrees(extended.rotationRadians.z) << " within " << extended.withinLimits << "\n";
+        expect(std::fabs(extended.rotationRadians.z) < mt::radians(6.f), std::string(id) + " thigh-down is extension, near 0");
+        expect(extended.withinLimits, std::string(id) + " a hanging thigh is inside the hip limits");
+        expect(extended.separation < 0.01f, std::string(id) + " hip pivot stays attached at extension");
+
+        poseSwing(lab, *joint, mt::radians(-45.f));
+        expect(!lab.world.jointState(joint->physics).withinLimits, std::string(id) + " 45 deg hip hyperextension is blocked");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+    }
+    const auto* hip1 = findJoint(lab, "hip_1");
+    const auto* hip2 = findJoint(lab, "hip_2");
+    if (hip1 != nullptr && hip2 != nullptr) {
+        const float side1 = lab.world.jointState(hip1->physics).rotationRadians.y;
+        const float side2 = lab.world.jointState(hip2->physics).rotationRadians.y;
+        expect(side1 * side2 < 0.f, "hip abduction signs are opposite, matching the two sides");
+    }
+
+    for (const char* id : {"shoulder_1", "shoulder_2"}) {
+        const auto* joint = findJoint(lab, id);
+        if (joint == nullptr) {
+            expect(false, std::string(id) + " exists");
+            continue;
+        }
+        const auto& arm = lab.ragdoll.bodies[joint->child];
+        const auto bind = lab.world.jointState(joint->physics);
+        const float cone = std::max(std::fabs(bind.swing1Max), std::fabs(bind.swing2Max));
+        const mt::Vec3 side = arm.segmentEnd.x >= 0.f ? mt::Vec3{1.f, 0.f, 0.f} : mt::Vec3{-1.f, 0.f, 0.f};
+        const mt::Vec3 hang = mt::normalize(side * 0.3f + mt::Vec3{0.f, -1.f, 0.f});
+        const mt::Vec3 local = mt::normalize(mt::rotate(mt::conjugate(arm.initialRotation), arm.segmentEnd - arm.segmentStart));
+        const mt::Quat rotation = mt::quatFromTo(local, hang);
+        const mt::Vec3 centerLocal = mt::rotate(mt::conjugate(arm.initialRotation), arm.initialPosition - arm.segmentStart);
+        lab.world.setBodyPose(arm.physics, arm.segmentStart + mt::rotate(rotation, centerLocal), rotation, true);
+        const auto hung = lab.world.jointState(joint->physics);
+        std::cout << id << " hang swing " << mt::degrees(hung.swingAngle) << " cone " << mt::degrees(cone) << "\n";
+        expect(hung.swingAngle < cone, std::string(id) + " arm hanging at the side is inside the shoulder cone");
+        expect(hung.positionLocked && hung.separation < 0.01f, std::string(id) + " shoulder pivot stays attached");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+    }
+}
+
+void driveTowardExtension(Lab& lab, const mt::RagdollJoint& joint, float friction) {
+    lab.world.setJointAngularFriction(joint.physics, friction);
+    const auto& parent = lab.ragdoll.bodies[joint.parent];
+    const auto& child = lab.ragdoll.bodies[joint.child];
+    lab.world.setBodyDamping(child.physics, 0.02f, 0.05f);
+    const float dt = lab.world.settings().fixedTimestep;
+    for (int i = 0; i < int(1.5f / dt); ++i) {
+        lab.world.setBodyPose(parent.physics, parent.initialPosition, parent.initialRotation, true);
+        lab.world.setBodyVelocity(parent.physics, {}, {});
+        const auto state = lab.world.jointState(joint.physics);
+        const float speed = mt::clampf(state.rotationRadians.z, 0.f, 1.5f) * 12.f;
+        lab.world.setBodyVelocity(child.physics, {}, state.bendAxisWorld * -speed);
+        lab.world.step(dt, 1);
+    }
+}
+
+void testLim001(Lab& lab) {
+    mt::resetRagdoll(lab.world, lab.ragdoll);
+    const mt::Vec3 gravity = lab.world.gravity();
+    lab.world.setGravity({});
+    for (auto& body : lab.ragdoll.bodies) {
+        body.initialPosition.y += 3.f;
+        body.segmentStart.y += 3.f;
+        body.segmentEnd.y += 3.f;
+        lab.world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, true);
+    }
+    const char* ids[] = {"elbow_1", "elbow_2", "knee_1", "knee_2"};
+    for (const char* id : ids) {
+        const auto* joint = findJoint(lab, id);
+        if (joint == nullptr) {
+            expect(false, std::string(id) + " exists");
+            continue;
+        }
+        const float before = lab.world.jointState(joint->physics).rotationRadians.z;
+        driveTowardExtension(lab, *joint, 0.f);
+        const auto after = lab.world.jointState(joint->physics);
+        const int contacts = lab.world.activeContactCount();
+        std::cout << id << " extension drive " << mt::degrees(before) << " -> " << mt::degrees(after.rotationRadians.z)
+                  << " deg, separation " << after.separation << " m, contacts " << contacts << ", at swing2 limit "
+                  << after.swing2AtLimit << "\n";
+        expect(after.rotationRadians.z < mt::radians(12.f), std::string(id) + " reaches near-full extension (not stopped by the old crouch limit)");
+        expect(after.rotationRadians.z > mt::radians(-10.f), std::string(id) + " does not hyperextend past solver tolerance");
+        expect(after.separation < 0.02f, std::string(id) + " stays attached while extending");
+        expect(after.swing2AtLimit, std::string(id) + " stops on the extension limit rather than on a contact");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+        for (auto& body : lab.ragdoll.bodies) {
+            lab.world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, true);
+        }
+        driveTowardExtension(lab, *joint, lab.preset.angularFriction);
+        const auto withFriction = lab.world.jointState(joint->physics);
+        std::cout << id << " with natural friction " << lab.preset.angularFriction << " Nm -> " << mt::degrees(withFriction.rotationRadians.z)
+                  << " deg\n";
+        expect(withFriction.rotationRadians.z < mt::radians(15.f),
+               std::string(id) + " still reaches near extension with natural angular friction");
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+        for (auto& body : lab.ragdoll.bodies) {
+            lab.world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, true);
+        }
+    }
+    for (auto& body : lab.ragdoll.bodies) {
+        body.initialPosition.y -= 3.f;
+        body.segmentStart.y -= 3.f;
+        body.segmentEnd.y -= 3.f;
+    }
+    lab.world.setGravity(gravity);
+    mt::resetRagdoll(lab.world, lab.ragdoll);
+    mt::applyPreset(lab.world, lab.ragdoll, lab.preset);
+}
+
 void testPhy006(Lab& lab) {
     const auto* chest = lab.ragdoll.find("chest");
     const mt::Vec3 directions[] = {{1, 0, 0}, {-1, 0, 0}, {0, 1, 0}, {0, -0.2f, 1}, {0, 0.5f, -1}, {1, 0.2f, 1}};
@@ -395,6 +631,9 @@ int main(int argc, char** argv) {
     if (which == "RIG-001" || which == "ALL") testRig001(lab);
     if (which == "RIG-002" || which == "ALL") testRig002(lab);
     if (which == "RIG-003" || which == "ALL") testRig003(lab);
+    if (which == "RIG-004" || which == "ALL") testRig004(lab);
+    if (which == "RIG-005" || which == "ALL") testRig005(lab);
+    if (which == "RIG-006" || which == "ALL") testRig006(lab);
     if (which == "PHY-001" || which == "ALL") {
         mt::resetRagdoll(lab.world, lab.ragdoll);
         testPhy001(lab);
@@ -414,8 +653,13 @@ int main(int argc, char** argv) {
     if (which == "PHY-006" || which == "ALL") {
         testPhy006(lab);
     }
-    if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "PHY-001" &&
-        which != "PHY-002" && which != "PHY-003" && which != "PHY-004" && which != "PHY-005" && which != "PHY-006") {
+    if (which == "LIM-001" || which == "ALL") {
+        mt::resetRagdoll(lab.world, lab.ragdoll);
+        testLim001(lab);
+    }
+    if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
+        which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&
+        which != "PHY-004" && which != "PHY-005" && which != "PHY-006" && which != "LIM-001") {
         std::cerr << "unknown test " << which << '\n';
         return 2;
     }

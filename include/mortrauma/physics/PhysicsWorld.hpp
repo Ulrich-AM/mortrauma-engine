@@ -97,7 +97,14 @@ struct JointState {
     Vec3 anchorChildWorld{};
     float separation = 0.f;
     Vec3 twistAxisWorld{};
+    Vec3 swingAxisWorld{};
     Vec3 bendAxisWorld{};
+    Vec3 childTwistAxisWorld{};
+    Vec3 childSwingAxisWorld{};
+    Vec3 childBendAxisWorld{};
+    bool twistAtLimit = false;
+    bool swing1AtLimit = false;
+    bool swing2AtLimit = false;
     // Relative rotation in constraint space (radians, XYZ = twist, swing1, swing2).
     Vec3 rotationRadians{};
     float swingAngle = 0.f;

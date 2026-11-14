@@ -26,15 +26,31 @@ float segmentDistance(Vec3 a0, Vec3 a1, Vec3 b0, Vec3 b1) {
                     std::min(pointSegmentDistance(b0, a0, a1), pointSegmentDistance(b1, a0, a1)));
 }
 
-void orthonormal(Vec3 x, Vec3 yHint, Vec3& axisX, Vec3& axisY) {
-    axisX = normalize(x);
-    Vec3 z = cross(axisX, yHint);
-    if (length(z) < 1e-4f) {
-        const Vec3 fallback = std::fabs(axisX.y) < 0.9f ? Vec3{0.f, 1.f, 0.f} : Vec3{1.f, 0.f, 0.f};
-        z = cross(axisX, fallback);
+struct Basis {
+    Vec3 x{1.f, 0.f, 0.f};
+    Vec3 y{0.f, 1.f, 0.f};
+    Vec3 z{0.f, 0.f, 1.f};
+};
+
+// X is exact. Z is the hint projected onto the plane normal to X, so a positive
+// rotation around Z swings X toward Y.
+Basis basisFromX(Vec3 x, Vec3 zHint) {
+    Basis basis;
+    basis.x = normalize(x);
+    basis.z = zHint - basis.x * dot(zHint, basis.x);
+    if (length(basis.z) < 1e-4f) {
+        const Vec3 fallback = std::fabs(basis.x.y) < 0.9f ? Vec3{0.f, 1.f, 0.f} : Vec3{1.f, 0.f, 0.f};
+        basis.z = cross(basis.x, fallback);
     }
-    z = normalize(z);
-    axisY = normalize(cross(z, axisX));
+    basis.z = normalize(basis.z);
+    basis.y = normalize(cross(basis.z, basis.x));
+    return basis;
+}
+
+void orthonormal(Vec3 x, Vec3 yHint, Vec3& axisX, Vec3& axisY) {
+    const Basis basis = basisFromX(x, cross(x, yHint));
+    axisX = basis.x;
+    axisY = basis.y;
 }
 
 Vec3 localPoint(Quat rotation, Vec3 position, Vec3 world) { return rotate(conjugate(rotation), world - position); }
@@ -239,15 +255,22 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
     }
 
     const int pelvis = bodyIndex.count("pelvis") ? bodyIndex["pelvis"] : -1;
-    Vec3 forward{0.f, 0.f, 1.f};
-    if (bodyIndex.count("hip_1") && bodyIndex.count("hip_2")) {
-        const Vec3 left = ragdoll.bodies[bodyIndex["hip_1"]].segmentStart;
-        const Vec3 right = ragdoll.bodies[bodyIndex["hip_2"]].segmentStart;
-        const Vec3 across = right - left;
-        Vec3 guessed = cross(Vec3{0.f, 1.f, 0.f}, across);
-        if (length(guessed) > 1e-4f) {
-            forward = normalize(guessed);
+    // Toes point out of the feet. That is the character's facing, used so both
+    // hips flex forward with the same sign. The hip bones themselves coincide
+    // with the pelvis, so a hip-to-hip cross product is not a facing vector.
+    Vec3 facing{0.f, 0.f, -1.f};
+    Vec3 faceAccum{};
+    for (const char* footId : {"foot_1", "foot_2"}) {
+        if (!bodyIndex.count(footId)) {
+            continue;
         }
+        const auto& foot = ragdoll.bodies[bodyIndex[footId]];
+        Vec3 along = foot.segmentEnd - foot.segmentStart;
+        along.y = 0.f;
+        faceAccum = faceAccum + along;
+    }
+    if (length(faceAccum) > 1e-3f) {
+        facing = normalize(faceAccum);
     }
 
     world.configureRagdollFilter(int(ragdoll.bodies.size()));
@@ -263,33 +286,70 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         const auto& parentBody = ragdoll.bodies[parent];
         const auto& childBody = ragdoll.bodies[child];
         const Vec3 anchor = childBody.segmentStart;
-        Vec3 twist = childBody.segmentEnd - childBody.segmentStart;
-        if (length(twist) < 1e-4f) {
-            twist = {0.f, -1.f, 0.f};
+        Vec3 distal = childBody.segmentEnd - childBody.segmentStart;
+        if (length(distal) < 1e-4f) {
+            distal = {0.f, -1.f, 0.f};
         }
-        Vec3 axisX;
-        Vec3 axisY;
-        if (spec.orient == BendOrient::None) {
-            orthonormal(twist, Vec3{0.f, 1.f, 0.f}, axisX, axisY);
+        distal = normalize(distal);
+        Vec3 proximal = parentBody.segmentEnd - parentBody.segmentStart;
+        if (length(proximal) < 1e-4f) {
+            proximal = distal;
+        }
+        proximal = normalize(proximal);
+
+        Basis parentFrame;
+        Basis childFrame;
+        if (spec.orient == BendOrient::Elbow || spec.orient == BendOrient::Knee) {
+            // Zero flexion is the child bone continuing the parent bone.
+            // The imported crouch is not that pose. The hinge is the authored
+            // bend plane, signed so the current bend is positive flexion.
+            Vec3 hinge = cross(proximal, distal);
+            if (length(hinge) < 0.15f) {
+                Vec3 hint = spec.orient == BendOrient::Elbow ? (parentBody.segmentStart - childBody.segmentEnd)
+                                                             : (pelvis >= 0 ? ragdoll.bodies[pelvis].initialPosition - childBody.segmentEnd
+                                                                            : Vec3{0.f, 1.f, 0.f});
+                if (length(hint) < 1e-4f) {
+                    hint = {0.f, 1.f, 0.f};
+                }
+                hinge = cross(proximal, hint);
+                if (length(hinge) < 1e-4f) {
+                    hinge = cross(proximal, Vec3{1.f, 0.f, 0.f});
+                }
+                hinge = normalize(hinge);
+                if (dot(cross(hinge, proximal), hint) < 0.f) {
+                    hinge = -hinge;
+                }
+            } else {
+                hinge = normalize(hinge);
+            }
+            parentFrame = basisFromX(proximal, hinge);
+            Vec3 childX = distal - parentFrame.z * dot(distal, parentFrame.z);
+            if (length(childX) < 1e-4f) {
+                childX = parentFrame.x;
+            }
+            childFrame.x = normalize(childX);
+            childFrame.z = parentFrame.z;
+            childFrame.y = normalize(cross(childFrame.z, childFrame.x));
+        } else if (spec.orient == BendOrient::Hip) {
+            // Zero is a thigh pointing down. Positive swing2 swings it toward
+            // the facing direction. Both sides share that sign.
+            parentFrame.x = {0.f, -1.f, 0.f};
+            parentFrame.y = facing - parentFrame.x * dot(facing, parentFrame.x);
+            if (length(parentFrame.y) < 1e-4f) {
+                parentFrame.y = {0.f, 0.f, -1.f};
+            }
+            parentFrame.y = normalize(parentFrame.y);
+            parentFrame.z = normalize(cross(parentFrame.x, parentFrame.y));
+            const Quat swing = quatFromTo(parentFrame.x, distal);
+            childFrame.x = rotate(swing, parentFrame.x);
+            childFrame.y = rotate(swing, parentFrame.y);
+            childFrame.z = rotate(swing, parentFrame.z);
         } else {
-            Vec3 desired{0.f, 1.f, 0.f};
-            if (spec.orient == BendOrient::Elbow) {
-                desired = parentBody.segmentStart - childBody.segmentEnd;
-            } else if (spec.orient == BendOrient::Knee && pelvis >= 0) {
-                desired = ragdoll.bodies[pelvis].initialPosition - childBody.segmentEnd;
-            } else if (spec.orient == BendOrient::Hip) {
-                desired = forward + Vec3{0.f, 0.6f, 0.f};
-            }
-            Vec3 hinge = cross(twist, desired);
-            if (length(hinge) < 1e-4f) {
-                hinge = cross(twist, Vec3{1.f, 0.f, 0.f});
-            }
-            hinge = normalize(hinge);
-            if (dot(cross(hinge, normalize(twist)), desired) < 0.f) {
-                hinge = -hinge;
-            }
-            axisX = normalize(twist);
-            axisY = normalize(cross(hinge, axisX));
+            Vec3 axisX;
+            Vec3 axisY;
+            orthonormal(distal, Vec3{0.f, 1.f, 0.f}, axisX, axisY);
+            parentFrame = basisFromX(axisX, cross(axisX, axisY));
+            childFrame = parentFrame;
         }
 
         const float scale = preset.limitScale;
@@ -298,11 +358,11 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         info.parent = parentBody.physics;
         info.child = childBody.physics;
         info.anchorInParent = localPoint(rotations[parent], centers[parent], anchor);
-        info.axisXInParent = localDir(rotations[parent], axisX);
-        info.axisYInParent = localDir(rotations[parent], axisY);
+        info.axisXInParent = localDir(rotations[parent], parentFrame.x);
+        info.axisYInParent = localDir(rotations[parent], parentFrame.y);
         info.anchorInChild = localPoint(rotations[child], centers[child], anchor);
-        info.axisXInChild = localDir(rotations[child], axisX);
-        info.axisYInChild = localDir(rotations[child], axisY);
+        info.axisXInChild = localDir(rotations[child], childFrame.x);
+        info.axisYInChild = localDir(rotations[child], childFrame.y);
         info.swing = spec.swing == SwingKind::Cone ? SwingType::Cone : SwingType::Pyramid;
         info.twistMin = spec.twistMin * scale;
         info.twistMax = spec.twistMax * scale;
@@ -331,7 +391,17 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         record.parent = parent;
         record.child = child;
         record.base = spec;
+        record.extensionAxis = parentFrame.x;
+        record.flexionDirection = parentFrame.y;
+        record.flexionAxis = parentFrame.z;
+        record.neutralOffset = world.jointState(joint).rotationRadians;
         ragdoll.joints.push_back(record);
+        if (spec.orient != BendOrient::None) {
+            Log::info(spec.id + " anatomical offset twist/swing1/swing2 deg " +
+                      std::to_string(int(std::lround(degrees(record.neutralOffset.x)))) + " " +
+                      std::to_string(int(std::lround(degrees(record.neutralOffset.y)))) + " " +
+                      std::to_string(int(std::lround(degrees(record.neutralOffset.z)))));
+        }
         world.setPairCollision(parentBody.subGroup, childBody.subGroup, false);
     }
 

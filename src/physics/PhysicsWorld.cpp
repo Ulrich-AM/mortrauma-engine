@@ -667,8 +667,11 @@ JointState PhysicsWorld::jointState(int joint) const {
     state.anchorChildWorld = child.position + rotate(child.rotation, record.info.anchorInChild);
     state.separation = length(state.anchorParentWorld - state.anchorChildWorld);
     state.twistAxisWorld = rotate(parent.rotation, normalize(record.info.axisXInParent));
-    const Vec3 axisY = rotate(parent.rotation, normalize(record.info.axisYInParent));
-    state.bendAxisWorld = cross(state.twistAxisWorld, axisY);
+    state.swingAxisWorld = rotate(parent.rotation, normalize(record.info.axisYInParent));
+    state.bendAxisWorld = cross(state.twistAxisWorld, state.swingAxisWorld);
+    state.childTwistAxisWorld = rotate(child.rotation, normalize(record.info.axisXInChild));
+    state.childSwingAxisWorld = rotate(child.rotation, normalize(record.info.axisYInChild));
+    state.childBendAxisWorld = cross(state.childTwistAxisWorld, state.childSwingAxisWorld);
 
     const mt::Quat relative = toMt(record.constraint->GetRotationInConstraintSpace());
     const Vec3 twisted = rotate(relative, Vec3{1.f, 0.f, 0.f});
@@ -692,6 +695,16 @@ JointState PhysicsWorld::jointState(int joint) const {
     }
     inside = inside && state.rotationRadians.x >= state.twistMin - tolerance && state.rotationRadians.x <= state.twistMax + tolerance;
     state.withinLimits = inside || record.grab;
+    const float edge = 0.02f;
+    state.twistAtLimit = state.rotationRadians.x <= state.twistMin + edge || state.rotationRadians.x >= state.twistMax - edge;
+    if (record.info.swing == SwingType::Cone) {
+        const float cone = std::max(std::fabs(state.swing1Max), std::fabs(state.swing2Max));
+        state.swing1AtLimit = state.swingAngle >= cone - edge;
+        state.swing2AtLimit = state.swing1AtLimit;
+    } else {
+        state.swing1AtLimit = state.rotationRadians.y <= state.swing1Min + edge || state.rotationRadians.y >= state.swing1Max - edge;
+        state.swing2AtLimit = state.rotationRadians.z <= state.swing2Min + edge || state.rotationRadians.z >= state.swing2Max - edge;
+    }
     if (!state.positionLocked) {
         state.status = "Position DOF open";
     } else if (state.separation > 0.02f) {

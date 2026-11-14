@@ -33,6 +33,14 @@ struct RagdollJoint {
     int parent = -1;
     int child = -1;
     JointConfig base;
+    // Constraint angles at the imported pose, measured from the anatomical
+    // neutral frame. Zero is extension for elbows, knees and hips, not the
+    // authored crouch. Other joints stay centered on the imported pose, so
+    // this offset is near zero for them.
+    Vec3 neutralOffset{};
+    Vec3 extensionAxis{};
+    Vec3 flexionDirection{};
+    Vec3 flexionAxis{};
 };
 
 struct Ragdoll {
