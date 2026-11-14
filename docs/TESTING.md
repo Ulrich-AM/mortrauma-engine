@@ -53,4 +53,6 @@ These items need a person at the window. An automated screenshot of the paused b
 
 ## Windows
 
-The Windows Release build, CTest, and the zip artifact are produced by `.github/workflows/windows-release.yml` on `windows-latest`. This Linux session did not compile with MSVC. Do not treat the Linux run as a substitute for that workflow.
+`.github/workflows/windows-release.yml` builds on `windows-latest` with the installed MSVC toolset (the image no longer exposes the Visual Studio 2022 CMake generator) and Ninja.
+
+GitHub Actions run [43537435747](https://github.com/Ulrich-AM/mortrauma-engine/actions/runs/43537435747), commit `ae14226`, MSVC 19.51: configure, compile, and all 9 CTest cases passed. The artifact `MORTRAUMA-v0.1.0-Windows-x64.zip` contains `MORTRAUMA/MORTRAUMA.exe` (3.8 MB), `assets/`, `configurations/`, and `README.txt`. No extra DLLs were produced; the MSVC runtime is linked statically. The executable was not launched on a Windows desktop in this session.

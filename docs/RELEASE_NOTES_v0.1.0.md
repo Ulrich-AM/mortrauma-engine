@@ -18,7 +18,9 @@ Passive ragdoll laboratory. No balancing, walking, or injury behavior.
 
 Linux Release, Clang 18, Jolt 5.3.0, 14 Nov 2026: all 9 tests passed.
 
-PHY-005 replay deviation was 0. PHY-002 settled to sleeping bodies with the lowest center at 0.081 m. A Windows MSVC run is produced by the release workflow; this note does not claim that run until the workflow artifact exists.
+Windows Release, MSVC 19.51 (Visual Studio 18) and Ninja, GitHub Actions run [43537435747](https://github.com/Ulrich-AM/mortrauma-engine/actions/runs/43537435747) on `ae14226`: all 9 tests passed. The uploaded package is `MORTRAUMA-v0.1.0-Windows-x64.zip` (about 6.4 MB) and contains `MORTRAUMA/MORTRAUMA.exe` with no extra runtime DLLs.
+
+PHY-005 replay deviation was 0. PHY-002 settled to sleeping bodies with the lowest center at 0.081 m.
 
 Interactive viewport checks (clicking grab and push, toggling every debug view) were not performed on a physical desktop. The paused bind pose was captured under Xvfb and shows the imported capsules, joint axes, and a single connected component.
 
