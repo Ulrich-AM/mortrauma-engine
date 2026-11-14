@@ -18,6 +18,8 @@ v0.3.4 removed the second character and remeasured the 30 s stand. v0.4.0 (M4) t
 
 v0.4.1 (M4.1) corrects the hip swing signs used for a weight shift and moves the center of mass toward either foot. Single-leg support is not established: the swing foot keeps its contacts, and the lift is refused. Recovery stepping is not extended. See `docs/M4_1_EXPERIMENTS.md`.
 
+v0.4.2 (M4.2) starts an unloading flexion while the swing foot is still touching, and stops if the torso leaves a stable region. The sole does not rise. The center of mass is still about 20 cm from the stance foot, and the full weight at that arm is above the 50 N·m hip. See `docs/M4_2_EXPERIMENTS.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.

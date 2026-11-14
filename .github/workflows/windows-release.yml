@@ -1,7 +1,7 @@
 name: Windows Release
 
 env:
-  PACKAGE_VERSION: "0.4.1"
+  PACKAGE_VERSION: "0.4.2"
 
 on:
   push:
@@ -58,11 +58,11 @@ jobs:
           The MSVC runtime is linked statically. A Visual Studio install is not required.
           An OpenGL 3.3 driver is required. The build enables AVX2 through Jolt Physics.
 
-          v0.4.1 is Humanoidguy only. The foot boxes follow the visible sole.
+          v0.4.2 is Humanoidguy only. The foot boxes follow the visible sole.
           Standing still uses the torque-limited balance controller. The Stepping
-          Laboratory can shift weight onto either foot. A foot lift is refused
-          until that foot's contacts unload. Nothing pins the feet. A hard push
-          can still knock the character down.
+          Laboratory can shift weight and try to unload the other foot. A lift
+          starts only after the sole actually rises while the stance holds.
+          Nothing pins the feet. A hard push can still knock the character down.
           "@ | Set-Content -Encoding utf8 (Join-Path $root "README.txt")
           $zip = "MORTRAUMA-v$env:PACKAGE_VERSION-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
@@ -105,7 +105,7 @@ jobs:
             echo "Release $tag already exists. Refusing to overwrite it."
             exit 1
           fi
-          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ] || [ "$tag" = "v0.2.0" ] || [ "$tag" = "v0.3.0" ] || [ "$tag" = "v0.3.1" ] || [ "$tag" = "v0.3.2" ] || [ "$tag" = "v0.3.3" ] || [ "$tag" = "v0.3.4" ] || [ "$tag" = "v0.4.0" ]; then
+          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ] || [ "$tag" = "v0.2.0" ] || [ "$tag" = "v0.3.0" ] || [ "$tag" = "v0.3.1" ] || [ "$tag" = "v0.3.2" ] || [ "$tag" = "v0.3.3" ] || [ "$tag" = "v0.3.4" ] || [ "$tag" = "v0.4.0" ] || [ "$tag" = "v0.4.1" ]; then
             echo "Refusing to publish over an existing release."
             exit 1
           fi

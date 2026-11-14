@@ -1,3 +1,7 @@
+# Foot lifting
+
+v0.4.2 does not start this lift until the unloading phase has seen the sole rise by 4 mm while the stance foot is still holding the torso. That rise was not measured. The Jacobian below is unchanged for a lift that does get there. The unloading trials are in `docs/ACTIVE_FOOT_UNLOADING.md`.
+
 # Foot lifting (v0.4.1)
 
 ## Why the v0.4.0 offsets were not kept

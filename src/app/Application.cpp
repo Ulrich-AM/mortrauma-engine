@@ -1091,8 +1091,19 @@ struct App {
                 arm();
                 stepping.requestSupport(supportRight);
             }
-            if (ImGui::Button("Test Foot Lift")) {
+            if (ImGui::Button("Test Unloading")) {
                 arm();
+                stepping.requestUnload(supportRight);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Test 1 cm Lift")) {
+                arm();
+                stepping.setLiftHeight(0.01f);
+                stepping.requestLift(supportRight);
+            }
+            if (ImGui::Button("Test 3 cm Lift")) {
+                arm();
+                stepping.setLiftHeight(0.03f);
                 stepping.requestLift(supportRight);
             }
             ImGui::SameLine();
@@ -1115,13 +1126,16 @@ struct App {
                         length(Vec3{balanceState.comVelocity.x, 0.f, balanceState.comVelocity.z}));
             ImGui::Text("Support margin %.3f m   contacts L %d R %d   saturated %d", stepping.supportMargin(), balanceState.leftPoints, balanceState.rightPoints,
                         balanceState.saturatedMotors);
-            ImGui::Text("Clearance %.3f m   target %.3f m   height error %.3f m", stepping.swingClearance(), stepping.swingTargetHeight(), stepping.heightError());
+            ImGui::Text("Clearance %.3f m   target %.3f m   height error %.3f m   swing vy %.3f m/s", stepping.swingClearance(), stepping.swingTargetHeight(),
+                        stepping.heightError(), stepping.swingVerticalVelocity());
+            ImGui::Text("Stance ankle %.1f N·m   stance hip %.1f N·m   slip %.3f m/s", stepping.stanceAnkleTorque(), stepping.stanceHipTorque(), stepping.stanceSlip());
+            ImGui::TextUnformatted("Foot load is not measured. Solved contact impulses are not available from this Jolt pin.");
             if (ImGui::CollapsingHeader("Timing")) {
                 float clearance = stepping.liftHeight();
                 float transfer = stepping.transferDuration();
                 float lift = stepping.liftDuration();
                 float hold = stepping.holdDuration();
-                if (ImGui::SliderFloat("Target foot clearance", &clearance, 0.02f, 0.06f, "%.3f m")) {
+                if (ImGui::SliderFloat("Target foot clearance", &clearance, 0.01f, 0.06f, "%.3f m")) {
                     stepping.setLiftHeight(clearance);
                 }
                 if (ImGui::SliderFloat("Transfer duration", &transfer, 0.8f, 4.f, "%.2f s")) {
@@ -1894,7 +1908,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.1 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.2 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();
