@@ -4,6 +4,7 @@
 #include "mortrauma/core/Log.hpp"
 #include "mortrauma/core/Paths.hpp"
 #include "mortrauma/balance/BalanceController.hpp"
+#include "mortrauma/balance/SingleLegPose.hpp"
 #include "mortrauma/balance/StandingPose.hpp"
 #include "mortrauma/balance/StepController.hpp"
 #include "mortrauma/motors/MotorController.hpp"
@@ -81,6 +82,7 @@ struct App {
     float transitionDuration = 0.6f;
     bool drivePoseJointsOnly = true;
     std::string poseMessage;
+    std::string singleLegNote = "Single-leg equilibrium has not been placed.";
     struct MotorTrace {
         std::vector<float> targetDeg;
         std::vector<float> measuredDeg;
@@ -372,6 +374,7 @@ struct App {
         world.endSupport();
         poseController.cancel();
         stepping.cancel();
+        balance.setStanceLeg(0);
         const StandingPlacement placement = placeStandingPose(world, ragdoll, balance.config());
         if (!placement.ok) {
             poseMessage = placement.error;
@@ -381,6 +384,33 @@ struct App {
         balance.resetState();
         accumulator = 0.f;
         poseMessage = "Placed the standing test pose. Joint separation " + std::to_string(placement.maxSeparation) + " m.";
+    }
+
+    void placeSingleLeg(bool supportRight) {
+        releaseGrab();
+        world.endSupport();
+        poseController.cancel();
+        stepping.cancel();
+        const SingleLegCandidate candidate = placeSingleLegCandidate(world, ragdoll, balance.config(), supportRight);
+        if (candidate.reference.empty()) {
+            singleLegNote = candidate.rejection.empty() ? "The single-leg search did not produce a pose." : candidate.rejection;
+            poseMessage = singleLegNote;
+            return;
+        }
+        balance.setReference(candidate.reference);
+        balance.resetState();
+        balance.setStanceLeg(supportRight ? 1 : 2);
+        balance.setEnabled(true, motors);
+        accumulator = 0.f;
+        playing = true;
+        singleLegNote = std::string(supportRight ? "Right" : "Left") + " support. " + candidate.rejection + " COM to ankle " +
+                        std::to_string(candidate.comToAnkleM) + " m, sole margin " + std::to_string(candidate.soleMarginM) +
+                        " m, swing clearance " + std::to_string(candidate.swingClearanceM) + " m, torso " +
+                        std::to_string(candidate.torsoTilt) + " rad. Static ankle " + std::to_string(candidate.ankleTorque) +
+                        " knee " + std::to_string(candidate.kneeTorque) + " hip " + std::to_string(candidate.hipTorque) +
+                        " hip root " + std::to_string(candidate.hipRootTorque) + " N·m. Limit " + candidate.limitingJoint + " " +
+                        std::to_string(candidate.limitingTorque) + "/" + std::to_string(candidate.limitingLimit) + ".";
+        poseMessage = singleLegNote;
     }
 
     void resetSimulation() {
@@ -1082,6 +1112,14 @@ struct App {
                 playing = true;
                 balance.setEnabled(true, motors);
             };
+            if (ImGui::Button("Test Right-Leg Equilibrium")) {
+                placeSingleLeg(true);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Test Left-Leg Equilibrium")) {
+                placeSingleLeg(false);
+            }
+            ImGui::TextWrapped("%s", singleLegNote.c_str());
             if (ImGui::Button("Test Weight Transfer")) {
                 arm();
                 stepping.requestTransfer(supportRight);
@@ -1118,6 +1156,7 @@ struct App {
             ImGui::SameLine();
             if (ImGui::Button("Abort Experiment")) {
                 stepping.abort();
+                balance.setStanceLeg(0);
             }
             if (ImGui::Button("Reset to Standing")) {
                 resetToStanding();
@@ -1128,7 +1167,12 @@ struct App {
                         balanceState.saturatedMotors);
             ImGui::Text("Clearance %.3f m   target %.3f m   height error %.3f m   swing vy %.3f m/s", stepping.swingClearance(), stepping.swingTargetHeight(),
                         stepping.heightError(), stepping.swingVerticalVelocity());
-            ImGui::Text("Stance ankle %.1f N·m   stance hip %.1f N·m   slip %.3f m/s", stepping.stanceAnkleTorque(), stepping.stanceHipTorque(), stepping.stanceSlip());
+            ImGui::Text("Balance %s   stance leg %s", balance.state().strategy.c_str(),
+                        balance.stanceLeg() == 1 ? "right" : (balance.stanceLeg() == 2 ? "left" : "both"));
+            ImGui::Text("COM %.3f %.3f %.3f   speed %.3f m/s   tilt %.3f rad   margin %.3f m", balanceState.com.x, balanceState.com.y,
+                        balanceState.com.z, length(balanceState.comVelocity), balanceState.torsoTilt, balanceState.margin);
+            ImGui::Text("Stance ankle %.1f N·m   stance hip %.1f N·m   slip %.3f m/s", stepping.stanceAnkleTorque(), stepping.stanceHipTorque(),
+                        stepping.stanceSlip());
             ImGui::TextUnformatted("Foot load is not measured. Solved contact impulses are not available from this Jolt pin.");
             if (ImGui::CollapsingHeader("Timing")) {
                 float clearance = stepping.liftHeight();
@@ -1908,7 +1952,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.2 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.3 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

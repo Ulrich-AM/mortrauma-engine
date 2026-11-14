@@ -272,7 +272,7 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
         const float arm = horizontal(flat(state.com - stancePos));
         const float moment = state.totalMass * 9.81f * arm;
         if (moment > 50.f) {
-            supportEstimate_ += "; full weight at this arm exceeds the 50 N·m hip";
+            supportEstimate_ += "; whole-body moment about the stance foot exceeds 50 N·m. That is not the hip-joint torque";
         }
     }
 

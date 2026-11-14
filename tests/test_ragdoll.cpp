@@ -584,6 +584,8 @@ void runStepTest(const std::string& which);
 void runAllStepTests();
 void runUnloadTest(const std::string& which);
 void runAllUnloadTests();
+void runEqLegTest(const std::string& which);
+void runAllEqLegTests();
 void recordStandingCsv(const std::string& path);
 void runEquilibriumSweep();
 void runLongStand();
@@ -629,6 +631,11 @@ int main(int argc, char** argv) {
     }
     if (which.rfind("ALIGN-", 0) == 0) {
         runAlignTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which.rfind("EQLEG-", 0) == 0) {
+        runEqLegTest(which);
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
@@ -746,6 +753,7 @@ int main(int argc, char** argv) {
         runAllAlignTests();
         runAllStepTests();
         runAllUnloadTests();
+        runAllEqLegTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
         which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&
