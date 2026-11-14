@@ -1,6 +1,6 @@
 # MORTRAUMA
 
-MORTRAUMA v0.2.0 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 adds torque-limited angular motors so the character can attempt joint-relative poses, resist a push, and relax. It does not balance, walk, grab on its own, or play animation. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
+MORTRAUMA v0.3.0 is a native C++ laboratory for physically simulated humanoid reactions. The body is still a fully dynamic ragdoll. v0.2.0 added torque-limited angular motors. v0.3.0 uses those motors to attempt a stand: one Humanoidguy estimates its center of mass and foot contacts and commands joint targets. It does not walk, step, get up, or grab on its own. If the stand fails, the body falls. v0.1.1's anatomical joint frames are unchanged: elbow and knee extension is the hinge zero, not the imported crouch.
 
 The window title is **MORTRAUMA | Physical Reactions Laboratory**.
 
@@ -12,6 +12,7 @@ src/core/             log, paths, math
 src/physics/          Jolt adapter
 src/rig/              character configuration and ragdoll builder
 src/motors/           torque-limited angular motor controller
+src/balance/          center-of-mass estimate and standing controller
 src/poses/            procedural poses and optional Mixamo retarget
 src/assets/           Assimp import
 src/renderer/         OpenGL viewport
@@ -19,8 +20,8 @@ src/app/              GLFW window, docking UI, tools
 assets/characters/    humanoidguy_rigged.fbx
 assets/configurations character, joint presets, and motor profiles
 assets/poses/         procedural pose parameters and an optional Mixamo reference
-assets/environments/  test-lab description
-tests/                CTest programs RIG, PHY, LIM, and MOT
+assets/environments/  test-lab and standing-scene descriptions
+tests/                CTest programs RIG, PHY, LIM, MOT, GRAB, and BAL
 ```
 
 The engine target `mortrauma_engine` does not link Dear ImGui or OpenGL. The executable does.
@@ -69,6 +70,8 @@ The simulation starts paused on the imported bind pose so the rig can be inspect
 
 The **Motor Laboratory** selects Passive, Compliant, Active, or Hold Current Pose, edits muscle groups and individual joints, and transitions to procedural or imported poses. Movement comes from the joint motors. Resetting or choosing Passive returns the passive ragdoll. The pelvis support button is a laboratory fixture, not balance.
 
+The **Balance Laboratory** enables a separate standing mode. It does not turn on when Active is selected. **Reset to standing test pose** places the character once, then the motors try to hold it. Presets are Conservative, Normal, and Aggressive. The panel also applies a known impulse at the chest, pelvis, or head. Balance refuses the pelvis fixture. On capsule feet the quiet stand lasts about a second and then the character falls. See `docs/BALANCE_SYSTEM.md`.
+
 - Right drag orbits, middle drag pans, the wheel zooms.
 - **Select** picks a rigid body.
 - **Grab** attaches a soft positional constraint to a kinematic target while the mouse is held. Limbs follow through the joints. Rotation of the grabbed body stays free.
@@ -92,4 +95,8 @@ See `docs/RIG_SPECIFICATION.md` for the bone-to-body mapping.
 - `docs/POSE_SYSTEM.md`
 - `docs/TESTING.md`
 - `docs/M2_TESTING.md`
+- `docs/BALANCE_SYSTEM.md`
+- `docs/BALANCE_TUNING.md`
+- `docs/BALANCE_TESTING.md`
+- `docs/GRAB_CRASH_INVESTIGATION.md`
 - `docs/ROADMAP.md`

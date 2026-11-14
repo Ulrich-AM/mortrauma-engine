@@ -13,6 +13,15 @@ namespace mt {
 
 enum class MotorMode { Passive, Compliant, Active, Hold };
 
+struct MotorTaskCommand {
+    std::string jointId;
+    Quat target{};
+    float activation = 1.f;
+    // Negative keeps the active profile frequency. Balance raises this so a
+    // torque-limited spring resists a buckle before the error runs away.
+    float frequencyHz = -1.f;
+};
+
 struct MotorGroup {
     std::string id;
     std::string label;
@@ -54,6 +63,13 @@ public:
     void setUseProfileGains(const std::string& jointId, bool useProfile);
     void setTarget(const std::string& jointId, Quat constraintOrientation);
     void setAllActivations(float activation, bool clearOverrides);
+
+    // One explicit task. While it is set, listed joints take these targets and
+    // activations instead of the mode/pose values. Unlisted joints are unchanged.
+    // This is the ownership hook balance uses. It is not a full behavior arbiter.
+    void setMotorTask(std::vector<MotorTaskCommand> commands);
+    void clearMotorTask();
+    bool motorTaskActive() const { return taskActive_; }
 
     // Copies current constraint orientations into targets and enables those
     // joints. An empty id list captures every joint. World transforms are not read.
@@ -97,6 +113,9 @@ private:
     MotorProfile active_{};
     bool relaxing_ = false;
     float relaxRate_ = 0.f;
+    bool taskActive_ = false;
+    std::vector<MotorTaskCommand> task_;
+    std::unordered_map<std::string, int> taskIndex_;
 };
 
 const char* motorModeName(MotorMode mode);

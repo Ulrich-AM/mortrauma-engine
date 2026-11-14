@@ -10,6 +10,7 @@
 #include <Jolt/Core/TempAllocator.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyLock.h>
+#include <Jolt/Physics/Body/BodyLockMulti.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
 #include <Jolt/Physics/Collision/GroupFilterTable.h>
@@ -319,7 +320,7 @@ int PhysicsWorld::createBody(const BodyCreateInfo& info) {
     }
     settings.mFriction = info.friction;
     settings.mRestitution = info.restitution;
-    settings.mAllowSleeping = settings_.allowSleeping;
+    settings.mAllowSleeping = settings_.allowSleeping && info.allowSleeping;
 
     JPH::Body* created = impl_->bodiesApi().CreateBody(settings);
     if (created == nullptr) {
@@ -406,13 +407,18 @@ int PhysicsWorld::createJoint(const JointCreateInfo& info) {
         motor.SetTorqueLimit(std::max(info.motorTorqueLimit, 0.f));
     }
 
-    JPH::BodyLockWrite lockA(impl_->system.GetBodyLockInterface(), impl_->bodies[info.parent].id);
-    JPH::BodyLockWrite lockB(impl_->system.GetBodyLockInterface(), impl_->bodies[info.child].id);
-    if (!lockA.Succeeded() || !lockB.Succeeded()) {
+    // Jolt hashes several bodies onto one mutex. Two BodyLockWrite calls on a
+    // shared mutex abort with "Resource deadlock avoided". BodyLockMultiWrite
+    // locks each mutex once, which is the API Jolt uses for constraint setup.
+    const JPH::BodyID lockedIds[2] = {impl_->bodies[info.parent].id, impl_->bodies[info.child].id};
+    JPH::BodyLockMultiWrite lock(impl_->system.GetBodyLockInterface(), lockedIds, 2);
+    JPH::Body* parentBody = lock.GetBody(0);
+    JPH::Body* childBody = lock.GetBody(1);
+    if (parentBody == nullptr || childBody == nullptr) {
         Log::error("Could not lock bodies for joint '" + info.name + "'.");
         return -1;
     }
-    JPH::Ref<JPH::TwoBodyConstraint> created = settings.Create(lockA.GetBody(), lockB.GetBody());
+    JPH::Ref<JPH::TwoBodyConstraint> created = settings.Create(*parentBody, *childBody);
     impl_->system.AddConstraint(created);
 
     JointRecord record;
@@ -832,6 +838,7 @@ int PhysicsWorld::beginGrab(int body, Vec3 bodyPointWorld, Vec3 targetWorld, flo
     anchor.mass = 1.f;
     anchor.isKinematic = true;
     anchor.collides = false;
+    anchor.allowSleeping = false;
     const int anchorBody = createBody(anchor);
     if (anchorBody < 0) {
         return -1;
@@ -894,16 +901,41 @@ void PhysicsWorld::updateGrab(int grab, Vec3 targetWorld) {
     if (!ready_ || grab < 0 || grab >= int(impl_->grabs.size()) || !impl_->grabs[grab].alive) {
         return;
     }
-    setBodyPose(impl_->grabs[grab].anchorBody, targetWorld, {}, true);
+    if (!finite(targetWorld)) {
+        return;
+    }
+    const BodyState body = bodyState(impl_->grabs[grab].body);
+    if (!body.valid || !finite(body.position)) {
+        return;
+    }
+    // A grab ray that is nearly parallel to the drag plane produces a target
+    // many metres away. That teleport makes the next constraint solve non-finite.
+    Vec3 delta = targetWorld - body.position;
+    const float distance = length(delta);
+    constexpr float kMaxGrabDistance = 4.f;
+    if (distance > kMaxGrabDistance) {
+        delta = delta * (kMaxGrabDistance / distance);
+    }
+    setBodyPose(impl_->grabs[grab].anchorBody, body.position + delta, {}, true);
 }
 
 void PhysicsWorld::endGrab(int grab) {
     if (!ready_ || grab < 0 || grab >= int(impl_->grabs.size()) || !impl_->grabs[grab].alive) {
         return;
     }
-    destroyJoint(impl_->grabs[grab].joint);
-    destroyBody(impl_->grabs[grab].anchorBody);
+    const int joint = impl_->grabs[grab].joint;
+    const int anchor = impl_->grabs[grab].anchorBody;
     impl_->grabs[grab].alive = false;
+    destroyJoint(joint);
+    destroyBody(anchor);
+}
+
+bool PhysicsWorld::grabAlive(int grab) const {
+    return ready_ && impl_ != nullptr && grab >= 0 && grab < int(impl_->grabs.size()) && impl_->grabs[grab].alive;
+}
+
+int PhysicsWorld::grabAnchor(int grab) const {
+    return grabAlive(grab) ? impl_->grabs[grab].anchorBody : -1;
 }
 
 void PhysicsWorld::clearGrabs() {
@@ -934,7 +966,11 @@ bool PhysicsWorld::setAngularMotor(int joint, const AngularMotorCommand& command
     }
 
     auto* constraint = impl_->joints[joint].constraint.GetPtr();
-    const float frequency = clampf(command.frequencyHz, 0.f, 40.f);
+    // Frequency is the servo bandwidth, not an extra force. Torque stays capped
+    // by command.torqueLimit. Balance needs a higher bandwidth than the 3.5 Hz
+    // pose profile because Jolt scales spring stiffness by the two-body inertia,
+    // which is far smaller than the whole character.
+    const float frequency = clampf(command.frequencyHz, 0.f, 80.f);
     const float damping = clampf(command.dampingRatio, 0.f, 2.f);
     const float torque = clampf(command.torqueLimit, 0.f, 400.f);
     const bool enable = command.enabled && frequency > 1e-3f && torque > 1e-3f;
@@ -990,6 +1026,7 @@ bool PhysicsWorld::beginSupport(int body, float frequency, float damping) {
     anchor.mass = 1.f;
     anchor.isKinematic = true;
     anchor.collides = false;
+    anchor.allowSleeping = false;
     const int anchorBody = createBody(anchor);
     if (anchorBody < 0) {
         return false;

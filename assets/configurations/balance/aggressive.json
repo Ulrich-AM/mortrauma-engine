@@ -1,0 +1,23 @@
+{
+  "name": "Aggressive",
+  "balance_strength": 1.0,
+  "ankle_correction": 1.6,
+  "hip_correction": 1.5,
+  "torso_upright": 1.4,
+  "com_velocity_damping": 1.3,
+  "recovery_radius_m": 0.28,
+  "ankle_gain_rad_per_m": 2.8,
+  "ankle_damping_rad_per_mps": 0.6,
+  "hip_gain_rad_per_m": 1.8,
+  "hip_damping_rad_per_mps": 0.4,
+  "torso_gain": 1.2,
+  "torso_damping": 0.3,
+  "knee_flexion_deg": 12,
+  "hip_flexion_deg": 8,
+  "ankle_flexion_deg": 0,
+  "falling_activation": 0.35,
+  "fall_tilt_rad": 1.15,
+  "min_state_seconds": 0.1,
+  "max_target_rate": 3.2,
+  "motor_frequency_hz": 80
+}

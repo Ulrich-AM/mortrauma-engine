@@ -1,7 +1,7 @@
 name: Windows Release
 
 env:
-  PACKAGE_VERSION: "0.2.0"
+  PACKAGE_VERSION: "0.3.0"
 
 on:
   push:
@@ -58,9 +58,9 @@ jobs:
           The MSVC runtime is linked statically. A Visual Studio install is not required.
           An OpenGL 3.3 driver is required. The build enables AVX2 through Jolt Physics.
 
-          v0.2.0 adds torque-limited joint motors. The character stays a dynamic ragdoll.
-          It does not balance, walk, or play animation. Press Play to simulate.
-          See the repository docs for the motor system, poses, and tests.
+          v0.3.0 adds autonomous standing. The character tries to stay upright with the
+          torque-limited motors from v0.2.0. It can fall. It does not step or get up.
+          Press Play to simulate. See the repository docs for balance and tests.
           "@ | Set-Content -Encoding utf8 (Join-Path $root "README.txt")
           $zip = "MORTRAUMA-v$env:PACKAGE_VERSION-Windows-x64.zip"
           if (Test-Path $zip) { Remove-Item $zip }
@@ -103,7 +103,7 @@ jobs:
             echo "Release $tag already exists. Refusing to overwrite it."
             exit 1
           fi
-          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ]; then
+          if [ "$tag" = "v0.1.0" ] || [ "$tag" = "v0.1.1" ] || [ "$tag" = "v0.2.0" ]; then
             echo "Refusing to publish over an existing release."
             exit 1
           fi
