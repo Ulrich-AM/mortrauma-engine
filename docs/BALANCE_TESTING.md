@@ -40,6 +40,12 @@ The first second is the BAL-001 pass. The later fall is the limitation in `docs/
 
 BAL-001 still requires the first second upright. On the flat-sole Normal preset that second measured a minimum center-of-mass height of 1.012 m and a maximum torso tilt of 0.247 rad, with the feet down on 119 of 120 steps. BAL-015 then measured a quiet stand of 1.39 s. The 10 s and 30 s targets were not met. The 30 s run stays finite and ends on the ground.
 
+## v0.3.2 equilibrium cases
+
+`EQ-001` through `EQ-012` cover coplanarity, joint connectivity, foot-only floor contacts, the unavailable impulse flag, the synthetic center of pressure, a 3 s hold, reachability of the ankle target, correction signs, per-axis torque, a 30 s quiet stand, both feet loaded, and the preserved 12 N·m / 1.3 kg / 0.7 friction limits.
+
+On the v0.3.2 Normal pose, BAL-001's first second measures a minimum center-of-mass height of 1.027 m and a maximum tilt of 0.265 rad. EQ-010 measures 30 s. BAL-003 and BAL-004 used to require a fall from 6 N·s, which was true on the heel target. That push is now rejected, and the tests expect the recovery. BAL-005 still requires the 55 N·s push to knock the body down. The comparison table is `docs/M3_2_EXPERIMENTS.md`.
+
 ## Grab
 
 GRAB-001 repeats begin and release. GRAB-002 resets during a grab. GRAB-003 grabs with motors active. GRAB-004 grabs with the pelvis fixture. GRAB-005 moves the target quickly. GRAB-006 checks the temporary constraint is gone. GRAB-007 grabs while balance is active. The lock bug they cover is in `docs/GRAB_CRASH_INVESTIGATION.md`.

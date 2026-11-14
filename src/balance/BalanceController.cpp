@@ -25,6 +25,20 @@ Vec3 clampEuler(Vec3 euler, const RagdollJoint& joint) {
 
 }  // namespace
 
+BalanceAxes balanceCorrection(const BalanceConfig& config, float forward, float lateral, float forwardRate, float lateralRate, bool ankles, bool hips) {
+    BalanceAxes axes;
+    const float damp = config.comVelocityDamping;
+    if (ankles) {
+        axes.ankleSwing2 = -(config.ankleGainRadPerM * config.ankleCorrection) * (forward + config.ankleDampingRadPerMps * damp * forwardRate);
+        axes.ankleSwing1 = -(config.ankleGainRadPerM * config.ankleCorrection) * (lateral + config.ankleDampingRadPerMps * damp * lateralRate);
+    }
+    if (hips) {
+        axes.hipSwing2 = -(config.hipGainRadPerM * config.hipCorrection) * (forward + config.hipDampingRadPerMps * damp * forwardRate);
+        axes.hipSwing1 = -(config.hipGainRadPerM * config.hipCorrection) * (lateral + config.hipDampingRadPerMps * damp * lateralRate);
+    }
+    return axes;
+}
+
 void BalanceController::setConfig(const BalanceConfig& config) { config_ = config; }
 
 bool BalanceController::loadPreset(const std::string& name, std::string& error) {
@@ -50,6 +64,8 @@ void BalanceController::setEnabled(bool enabled, MotorController& motors) {
         timeInPhase_ = 0.f;
         commanded_.clear();
         anklesSettled_ = false;
+        fellLatch_ = false;
+        stoodSeconds_ = 0.f;
     }
     enabled_ = true;
 }
@@ -66,6 +82,8 @@ void BalanceController::resetState() {
     timeInPhase_ = 0.f;
     commanded_.clear();
     anklesSettled_ = false;
+    fellLatch_ = false;
+    stoodSeconds_ = 0.f;
     if (enabled_) {
         state_.phase = BalancePhase::Initializing;
     } else {
@@ -95,7 +113,7 @@ void BalanceController::transition(BalancePhase next, bool force) {
 void BalanceController::pushHistory() {
     BalanceSample sample;
     sample.time = diagnostics_.time;
-    const Vec3 horizontal = state_.com - state_.supportCenter;
+    const Vec3 horizontal = state_.com - state_.balanceReference;
     sample.comForward = dot(Vec3{horizontal.x, 0.f, horizontal.z}, state_.facing);
     sample.comSpeed = length(Vec3{state_.comVelocity.x, 0.f, state_.comVelocity.z});
     sample.torsoTilt = state_.torsoTilt;
@@ -114,7 +132,7 @@ void BalanceController::observe(const PhysicsWorld& world, const Ragdoll& ragdol
     lastDt_ = step;
     diagnostics_.time += step;
     timeInPhase_ += step;
-    BalanceState measured = estimator_.measure(world, ragdoll);
+    BalanceState measured = estimator_.measure(world, ragdoll, config_.equilibriumLeadM);
     measured.phase = enabled_ ? state_.phase : BalancePhase::Inactive;
     if (!enabled_) {
         measured.strategy = "none";
@@ -181,7 +199,14 @@ void BalanceController::observe(const PhysicsWorld& world, const Ragdoll& ragdol
     }
     measured.phase = state_.phase;
 
-    const Vec3 error = measured.com - (length(measured.supportCenter) > 0.f || supported ? measured.supportCenter : measured.comProjection);
+    Vec3 referencePoint = measured.comProjection;
+    if (config_.equilibriumReference && measured.equilibriumValid) {
+        referencePoint = measured.equilibriumTarget;
+    } else if (length(measured.supportCenter) > 1e-4f || supported) {
+        referencePoint = measured.supportCenter;
+    }
+    measured.balanceReference = referencePoint;
+    const Vec3 error = measured.com - referencePoint;
     const float forward = dot(Vec3{error.x, 0.f, error.z}, measured.facing);
     const float lateral = dot(Vec3{error.x, 0.f, error.z}, measured.right);
     measured.ankleAuthority = supported && state_.phase != BalancePhase::Grounded && state_.phase != BalancePhase::Falling;
@@ -224,6 +249,21 @@ void BalanceController::observe(const PhysicsWorld& world, const Ragdoll& ragdol
         }
         anklesSettled_ = true;
     }
+    const bool down = measured.phase == BalancePhase::Falling || measured.phase == BalancePhase::Grounded || measured.com.y < 0.75f ||
+                      measured.torsoTilt > 0.7f;
+    if (!fellLatch_) {
+        if (down && diagnostics_.time > 0.02f) {
+            fellLatch_ = true;
+        } else {
+            stoodSeconds_ = diagnostics_.time;
+        }
+    }
+    measured.stoodSeconds = stoodSeconds_;
+    if (measured.phase == BalancePhase::Falling || measured.phase == BalancePhase::Grounded || measured.torsoTilt > 0.7f) {
+        measured.instability = "falling";
+    } else if (measured.estimatedAnkleMoment > 12.f) {
+        measured.instability = "pitch moment above 12 N·m; hips carry the residual";
+    }
     state_ = measured;
     pushHistory();
 }
@@ -244,29 +284,19 @@ void BalanceController::command(const Ragdoll& ragdoll, MotorController& motors)
     }
     const bool correct = state_.finite && (state_.phase == BalancePhase::Initializing || state_.phase == BalancePhase::Standing ||
                                            state_.phase == BalancePhase::Recovering);
-    const Vec3 error = state_.com - state_.supportCenter;
+    const Vec3 error = state_.com - state_.balanceReference;
     const float forward = dot(Vec3{error.x, 0.f, error.z}, state_.facing);
     const float lateral = dot(Vec3{error.x, 0.f, error.z}, state_.right);
     const float forwardRate = dot(state_.comVelocity, state_.facing);
     const float lateralRate = dot(state_.comVelocity, state_.right);
-    const float damp = config_.comVelocityDamping;
     // Positive swing2 flexes the hip and, with the foot planted, pitches the
     // torso further forward. A forward COM error therefore commands extension.
-    const float ankleForward = state_.ankleAuthority && correct
-                                   ? -(config_.ankleGainRadPerM * config_.ankleCorrection) *
-                                         (forward + config_.ankleDampingRadPerMps * damp * forwardRate)
-                                   : 0.f;
-    const float ankleLateral = state_.ankleAuthority && correct
-                                   ? -(config_.ankleGainRadPerM * config_.ankleCorrection) *
-                                         (lateral + config_.ankleDampingRadPerMps * damp * lateralRate)
-                                   : 0.f;
     const bool hips = correct && (state_.leftGrounded || state_.rightGrounded);
-    const float hipForward = hips ? -(config_.hipGainRadPerM * config_.hipCorrection) *
-                                        (forward + config_.hipDampingRadPerMps * damp * forwardRate)
-                                  : 0.f;
-    const float hipLateral = hips ? -(config_.hipGainRadPerM * config_.hipCorrection) *
-                                        (lateral + config_.hipDampingRadPerMps * damp * lateralRate)
-                                  : 0.f;
+    const BalanceAxes axes = balanceCorrection(config_, forward, lateral, forwardRate, lateralRate, state_.ankleAuthority && correct, hips);
+    const float ankleForward = axes.ankleSwing2;
+    const float ankleLateral = axes.ankleSwing1;
+    const float hipForward = axes.hipSwing2;
+    const float hipLateral = axes.hipSwing1;
     const float torso = correct ? config_.torsoGain * config_.torsoUpright : 0.f;
     const float leanForward = dot(state_.torsoUp, state_.facing);
     const float leanLateral = dot(state_.torsoUp, state_.right);

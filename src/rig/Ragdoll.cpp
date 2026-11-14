@@ -2,6 +2,7 @@
 
 #include "mortrauma/core/Log.hpp"
 
+#include <algorithm>
 #include <cmath>
 #include <queue>
 #include <vector>
@@ -218,6 +219,8 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         Vec3 heelLocal{};
         Vec3 foreLocal{};
         Vec3 shapeCenter{};
+        int soleUndersideCount = 0;
+        float soleUndersideGap = 0.f;
         if (footPoints.size() > 8) {
             // Local +Y is the heel-to-toe bone. The sole normal is the part of
             // world up perpendicular to that bone, so the ankle pitch that levels
@@ -253,6 +256,20 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
             span(lateral, minX, maxX);
             span(forward, minY, maxY);
             span(sole, minZ, maxZ);
+            std::vector<float> aboveBottom;
+            aboveBottom.reserve(footPoints.size());
+            int nearBottom = 0;
+            for (const Vec3& point : footPoints) {
+                const float height = dot(point, sole) - minZ;
+                aboveBottom.push_back(height);
+                if (height < 0.005f) {
+                    ++nearBottom;
+                }
+            }
+            std::sort(aboveBottom.begin(), aboveBottom.end());
+            const float percentile = aboveBottom[aboveBottom.size() / 10];
+            soleUndersideCount = nearBottom;
+            soleUndersideGap = percentile;
             const Vec3 half{
                 std::max((maxX - minX) * 0.5f, 0.012f),
                 std::max((maxY - minY) * 0.5f, 0.012f),
@@ -278,7 +295,9 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
             soleForward = forward;
             heelLocal = shapeCenter + rotate(info.shapeRotation, Vec3{0.f, -half.y, -half.z});
             foreLocal = shapeCenter + rotate(info.shapeRotation, Vec3{0.f, half.y, -half.z});
-            Log::info(spec.id + " sole box half " + std::to_string(half.x) + " " + std::to_string(half.y) + " " + std::to_string(half.z));
+            Log::info(spec.id + " sole box half " + std::to_string(half.x) + " " + std::to_string(half.y) + " " + std::to_string(half.z) +
+                      " underside " + std::to_string(soleUndersideCount) + "/" + std::to_string(footPoints.size()) + " within 5 mm, p10 gap " +
+                      std::to_string(soleUndersideGap));
         } else if (full <= radius * 2.05f) {
             info.shape = BodyCreateInfo::Shape::Sphere;
             info.radius = std::max(radius, full * 0.5f);
@@ -320,6 +339,8 @@ Ragdoll RagdollBuilder::build(PhysicsWorld& world, const CharacterConfig& config
         body.soleForwardLocal = soleForward;
         body.heelLocal = heelLocal;
         body.forefootLocal = foreLocal;
+        body.soleUndersideVertices = soleUndersideCount;
+        body.soleUndersideGapM = soleUndersideGap;
         body.initialPosition = center;
         body.initialRotation = rotation;
         const Mat4 bodyWorld = Mat4::fromRotationTranslation(rotation, center);

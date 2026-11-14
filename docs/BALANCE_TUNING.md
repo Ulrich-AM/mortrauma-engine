@@ -4,6 +4,8 @@ Presets live in `assets/configurations/balance/`. They scale the controller. The
 
 v0.3.1 did not change the Normal gains or the 12 N·m ankle limit. A trial at 28 N·m still fell during the second second (center of mass down to 0.60 m). A trial at 48 N·m fell faster, because the ankle spring reaches that cap over a fraction of a degree and shoves the sole. Those limits were reverted. Foot friction stays 0.7.
 
+v0.3.2 also leaves those numbers alone. The 30 s stand comes from moving the center-of-mass reference onto the ankles, not from a stiffer servo. `equilibriumReference` defaults on. `equilibriumLeadM` is 0, which is the zero-moment point. `coplanarFeet` defaults off: the knee trials that tried to flatten the 12 mm left-right gap either did nothing or made the stand fall. Do not raise ankle torque or floor friction to hide a bad reference. A forward arm of about 32 mm is all 12 N·m can hold at half the body weight.
+
 | Field | Unit | Role |
 | --- | --- | --- |
 | `balance_strength` | scale, 0–1.5 | Multiplies torque and, through activation, the servo frequency |

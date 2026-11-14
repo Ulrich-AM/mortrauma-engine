@@ -16,6 +16,17 @@ namespace mt {
 
 // Reads a balance estimate and submits one motor task. It does not call
 // setAngularMotor and it does not move bodies.
+// Positive forward points toward the toes. Positive swing2 pitches the torso
+// further that way, so a positive COM error commands a negative swing2.
+struct BalanceAxes {
+    float ankleSwing2 = 0.f;
+    float ankleSwing1 = 0.f;
+    float hipSwing2 = 0.f;
+    float hipSwing1 = 0.f;
+};
+
+BalanceAxes balanceCorrection(const BalanceConfig& config, float forward, float lateral, float forwardRate, float lateralRate, bool ankles, bool hips);
+
 class BalanceController {
 public:
     void setConfig(const BalanceConfig& config);
@@ -50,6 +61,8 @@ private:
     std::unordered_map<std::string, Quat> commanded_;
     float lastDt_ = 0.f;
     bool anklesSettled_ = false;
+    bool fellLatch_ = false;
+    float stoodSeconds_ = 0.f;
 };
 
 }  // namespace mt

@@ -572,8 +572,13 @@ void runGrabTest(const std::string& which);
 void runAllGrabTests();
 void runBalanceTest(const std::string& which);
 void runAllBalanceTests();
+void runEquilibriumTest(const std::string& which);
+void runAllEquilibriumTests();
 void runFootTest(const std::string& which);
 void runAllFootTests();
+void recordStandingCsv(const std::string& path);
+void runEquilibriumSweep();
+void runLongStand();
 
 int main(int argc, char** argv) {
     const std::string which = argc > 1 ? argv[1] : "ALL";
@@ -587,8 +592,25 @@ int main(int argc, char** argv) {
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
+    if (which == "EQ-BASE") {
+        recordStandingCsv(argc > 2 ? argv[2] : "standing_baseline.csv");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which == "EQ-SWEEP") {
+        runEquilibriumSweep();
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which == "EQ-LONG") {
+        runLongStand();
+        return gFailures == 0 ? 0 : 1;
+    }
     if (which.rfind("FOOT-", 0) == 0) {
         runFootTest(which);
+        std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
+        return gFailures == 0 ? 0 : 1;
+    }
+    if (which.rfind("EQ-", 0) == 0 && which != "EQ-BASE" && which != "EQ-SWEEP" && which != "EQ-LONG") {
+        runEquilibriumTest(which);
         std::cout << (gFailures == 0 ? "ALL PASSED\n" : "FAILURES " + std::to_string(gFailures) + "\n");
         return gFailures == 0 ? 0 : 1;
     }
@@ -691,6 +713,7 @@ int main(int argc, char** argv) {
         runAllGrabTests();
         runAllFootTests();
         runAllBalanceTests();
+        runAllEquilibriumTests();
     }
     if (which != "ALL" && which != "RIG-001" && which != "RIG-002" && which != "RIG-003" && which != "RIG-004" &&
         which != "RIG-005" && which != "RIG-006" && which != "PHY-001" && which != "PHY-002" && which != "PHY-003" &&

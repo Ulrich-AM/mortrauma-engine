@@ -1,12 +1,14 @@
 #include "mortrauma/assets/ModelLoader.hpp"
 #include "mortrauma/balance/BalanceController.hpp"
 #include "mortrauma/balance/StandingPose.hpp"
+#include "mortrauma/balance/SupportContacts.hpp"
 #include "mortrauma/core/Paths.hpp"
 #include "mortrauma/motors/MotorController.hpp"
 #include "mortrauma/physics/PhysicsWorld.hpp"
 #include "mortrauma/rig/Ragdoll.hpp"
 
 #include <cmath>
+#include <fstream>
 #include <iostream>
 #include <string>
 
@@ -223,9 +225,10 @@ void testBal003() {
               << mt::balancePhaseName(trial.phase) << '\n';
     expect(trial.finite, "BAL-003 finite");
     expect(!lab.world.supportActive(), "BAL-003 no hidden support");
-    expect(travel > 0.15f, "BAL-003 the push moves the body");
-    // 6 N·s is above what the 12 N·m ankles can reject on capsule feet.
-    expect(fell, "BAL-003 a small forward push is not recovered and the body falls");
+    expect(travel > 0.02f, "BAL-003 the push moves the body");
+    // v0.3.1 fell from 6 N·s. With the COM over the ankles the same push is
+    // rejected. A 55 N·s push is still a fall; that is BAL-005.
+    expect(!fell && trial.minComY > 0.9f, "BAL-003 a 6 N·s forward push no longer drops the stance");
 }
 
 void testBal004() {
@@ -244,7 +247,7 @@ void testBal004() {
     expect(trial.finite, "BAL-004 finite");
     expect(!lab.world.supportActive(), "BAL-004 no hidden support");
     expect(trial.maxAnkle + trial.maxHip > 0.4f, "BAL-004 ankle or hip motors answer the push");
-    expect(fell, "BAL-004 a lateral push is not recovered on capsule feet");
+    expect(!fell && trial.minComY > 0.9f, "BAL-004 a 6 N·s lateral push no longer drops the stance");
 }
 
 void testBal005() {
@@ -650,7 +653,7 @@ void testBal015() {
             break;
         }
     }
-    std::cout << "BAL-015 quiet stand " << duration << " s (10 s target, not claimed)\n";
+    std::cout << "BAL-015 quiet stand " << duration << " s\n";
     expect(finite, "BAL-015 finite");
     expect(duration >= 0.75f, "BAL-015 stands at least as long as the first-second contract");
 }
@@ -702,6 +705,136 @@ void testBal020() {
     std::cout << "BAL-020 30s comY " << state.com.y << " tilt " << state.torsoTilt << " phase " << mt::balancePhaseName(state.phase) << '\n';
     expect(trial.finite, "BAL-020 stays finite for 30 seconds");
     expect(state.com.y > -1.f && state.com.y < 5.f, "BAL-020 does not leave the scene");
+}
+
+float quietDuration(Lab& lab, int maxSteps, float& peakAnkle, float& peakHip, int& saturated) {
+    const float dt = lab.world.settings().fixedTimestep;
+    float stood = 0.f;
+    peakAnkle = 0.f;
+    peakHip = 0.f;
+    saturated = 0;
+    for (int step = 0; step < maxSteps; ++step) {
+        Trial slice;
+        integrate(lab, slice, 1, true);
+        const auto& state = lab.balance.state();
+        peakAnkle = std::max(peakAnkle, state.ankleEffort);
+        peakHip = std::max(peakHip, state.hipEffort);
+        saturated = std::max(saturated, state.saturatedMotors);
+        const bool upright = state.com.y > 0.75f && state.torsoTilt < 0.7f && state.phase != mt::BalancePhase::Grounded &&
+                             state.phase != mt::BalancePhase::Falling;
+        if (!upright) {
+            break;
+        }
+        stood = (step + 1) * dt;
+    }
+    return stood;
+}
+
+void recordStandingCsv(const std::string& path) {
+    Lab lab;
+    if (!loadLab(lab, true) || !arm(lab)) {
+        std::cerr << "baseline placement failed\n";
+        ++gFailures;
+        return;
+    }
+    std::ofstream out(path);
+    out << "t,com_x,com_y,com_z,com_vx,com_vy,com_vz,tilt,pelvis_tilt,margin,capture,phase,left_pts,right_pts,"
+           "left_heel,left_fore,right_heel,right_fore,left_pitch,left_roll,right_pitch,right_roll,ankle,hip,saturated,"
+           "support_x,support_z,foot1_vx,foot1_vz,foot2_vx,foot2_vz\n";
+    const float dt = lab.world.settings().fixedTimestep;
+    float stood = 0.f;
+    for (int step = 0; step < 1200; ++step) {
+        lab.balance.observe(lab.world, lab.ragdoll, dt);
+        lab.balance.command(lab.ragdoll, lab.motors);
+        lab.motors.apply(lab.world, lab.ragdoll);
+        lab.world.step(dt, 1);
+        const auto& s = lab.balance.state();
+        const auto f1 = lab.world.bodyState(lab.ragdoll.find("foot_1")->physics);
+        const auto f2 = lab.world.bodyState(lab.ragdoll.find("foot_2")->physics);
+        const float t = (step + 1) * dt;
+        out << t << ',' << s.com.x << ',' << s.com.y << ',' << s.com.z << ',' << s.comVelocity.x << ',' << s.comVelocity.y << ','
+            << s.comVelocity.z << ',' << s.torsoTilt << ',' << s.pelvisTilt << ',' << s.margin << ',' << s.captureDistance << ','
+            << mt::balancePhaseName(s.phase) << ',' << s.leftPoints << ',' << s.rightPoints << ',' << s.leftHeelClearance << ','
+            << s.leftForeClearance << ',' << s.rightHeelClearance << ',' << s.rightForeClearance << ',' << s.leftSolePitch << ','
+            << s.leftSoleRoll << ',' << s.rightSolePitch << ',' << s.rightSoleRoll << ',' << s.ankleEffort << ',' << s.hipEffort << ','
+            << s.saturatedMotors << ',' << s.supportCenter.x << ',' << s.supportCenter.z << ',' << f1.linearVelocity.x << ','
+            << f1.linearVelocity.z << ',' << f2.linearVelocity.x << ',' << f2.linearVelocity.z << '\n';
+        const bool up = s.com.y > 0.75f && s.torsoTilt < 0.7f && s.phase != mt::BalancePhase::Grounded && s.phase != mt::BalancePhase::Falling;
+        if (up) {
+            stood = t;
+        }
+    }
+    std::cout << "recorded " << path << " stood " << stood << " s\n";
+}
+
+void runLongStand() {
+    Lab lab;
+    if (!loadLab(lab, true)) {
+        std::cout << "long load failed\n";
+        return;
+    }
+    mt::BalanceConfig config = lab.balance.config();
+    config.coplanarFeet = true;
+    config.equilibriumReference = true;
+    lab.balance.setConfig(config);
+    if (!arm(lab)) {
+        std::cout << "long placement failed\n";
+        return;
+    }
+    const float dt = lab.world.settings().fixedTimestep;
+    for (int step = 0; step < 3600; ++step) {
+        Trial slice;
+        integrate(lab, slice, 1, true);
+        if ((step + 1) % 120 == 0) {
+            const auto& s = lab.balance.state();
+            std::cout << "t " << (step + 1) * dt << " comY " << s.com.y << " tilt " << s.torsoTilt << " toAnkle " << s.comToEquilibrium
+                      << " moment " << s.estimatedAnkleMoment << " ankle " << s.ankleEffort << " hip " << s.hipEffort << " sat "
+                      << s.saturatedMotors << " margin " << s.margin << " coplanar " << s.coplanarityM << " phase "
+                      << mt::balancePhaseName(s.phase) << " " << s.instability << '\n';
+        }
+    }
+}
+
+void runEquilibriumSweep() {
+    const struct {
+        const char* name;
+        bool coplanar;
+        bool equilibrium;
+    } cases[] = {
+        {"A_baseline", false, false},
+        {"B_coplanar", true, false},
+        {"C_equilibrium", false, true},
+        {"D_both", true, true},
+    };
+    for (const auto& item : cases) {
+        Lab lab;
+        if (!loadLab(lab, true)) {
+            std::cout << item.name << " load failed\n";
+            continue;
+        }
+        mt::BalanceConfig config = lab.balance.config();
+        config.coplanarFeet = item.coplanar;
+        config.equilibriumReference = item.equilibrium;
+        lab.balance.setConfig(config);
+        if (!arm(lab)) {
+            std::cout << item.name << " placement failed\n";
+            continue;
+        }
+        const auto placed = mt::placeStandingPose(lab.world, lab.ragdoll, config);
+        float ankle = 0.f;
+        float hip = 0.f;
+        int saturated = 0;
+        // arm() already placed once. Place again so the printed metrics match
+        // the configuration, then re-arm the controller on that pose.
+        lab.balance.setReference(placed.reference);
+        lab.balance.resetState();
+        const float stood = quietDuration(lab, 1200, ankle, hip, saturated);
+        const auto& state = lab.balance.state();
+        std::cout << item.name << " stood " << stood << " ankle " << ankle << " hip " << hip << " sat " << saturated << " comToAnkle "
+                  << placed.comToAnkleM << " coplanar " << placed.coplanarityM << " heelFore " << placed.heelForeGapM << " sole "
+                  << placed.soleNormalError << " phase " << mt::balancePhaseName(state.phase) << " instability " << state.instability
+                  << '\n';
+    }
 }
 
 void runFootTest(const std::string& which) {
@@ -759,6 +892,216 @@ void runBalanceTest(const std::string& which) {
         std::cerr << "unknown balance test " << which << '\n';
         ++gFailures;
     }
+}
+
+void testEq001() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-001 laboratory loaded");
+    const auto placed = mt::placeStandingPose(lab.world, lab.ragdoll, lab.balance.config());
+    std::cout << "EQ-001 sole " << placed.soleNormalError << " heelFore " << placed.heelForeGapM << " coplanar " << placed.coplanarityM
+              << '\n';
+    expect(placed.ok, "EQ-001 pose placed");
+    expect(placed.soleNormalError < mt::radians(1.f), "EQ-001 sole normals are within 1 degree of vertical");
+    expect(placed.heelForeGapM < 0.003f, "EQ-001 heel-to-forefoot height is under 3 mm");
+    // Knee equalization that also re-levels the ankles drops the body. The
+    // unloaded left/right gap stays about 12 mm; contact closes it.
+    expect(placed.coplanarityM < 0.014f, "EQ-001 unloaded left-right gap stays at the measured residual");
+    lab.balance.setReference(placed.reference);
+    lab.balance.setEnabled(true, lab.motors);
+    lab.balance.resetState();
+    Trial trial;
+    integrate(lab, trial, 120, true);
+    std::cout << "EQ-001 settled coplanar " << lab.balance.state().coplanarityM << '\n';
+    expect(lab.balance.state().coplanarityM < 0.003f, "EQ-001 both soles share the floor within 3 mm once loaded");
+}
+
+void testEq002() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-002 laboratory loaded");
+    const auto placed = mt::placeStandingPose(lab.world, lab.ragdoll, lab.balance.config());
+    expect(placed.ok && placed.maxSeparation < 0.002f, "EQ-002 joints stay connected");
+    expect(lab.ragdoll.bodies.size() == 21 && lab.ragdoll.joints.size() == 20, "EQ-002 21 bodies and 20 joints");
+    int broken = 0;
+    for (const auto& joint : lab.ragdoll.joints) {
+        if (joint.parent < 0 || joint.child < 0) {
+            ++broken;
+        }
+    }
+    expect(broken == 0, "EQ-002 every joint has a parent and a child");
+}
+
+void testEq003() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-003 laboratory loaded");
+    expect(arm(lab), "EQ-003 placed");
+    Trial trial;
+    integrate(lab, trial, 40, true);
+    const int right = lab.ragdoll.find("foot_1")->physics;
+    const int left = lab.ragdoll.find("foot_2")->physics;
+    int footContacts = 0;
+    int other = 0;
+    for (const auto& contact : lab.world.contacts()) {
+        const bool floor = contact.bodyA == lab.floor || contact.bodyB == lab.floor;
+        if (!floor) {
+            continue;
+        }
+        const bool foot = contact.bodyA == right || contact.bodyB == right || contact.bodyA == left || contact.bodyB == left;
+        if (foot) {
+            ++footContacts;
+        } else {
+            ++other;
+        }
+    }
+    std::cout << "EQ-003 foot contacts " << footContacts << " other " << other << '\n';
+    expect(footContacts >= 3, "EQ-003 supporting contacts come from the foot colliders");
+    expect(other == 0, "EQ-003 no other body is on the floor");
+}
+
+void testEq004() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-004 laboratory loaded");
+    expect(arm(lab), "EQ-004 placed");
+    Trial trial;
+    integrate(lab, trial, 20, true);
+    const auto& state = lab.balance.state();
+    expect(!state.contactImpulseAvailable && !state.copAvailable, "EQ-004 contact impulses are unavailable in this Jolt pin");
+    expect(state.leftLoadFraction < 0.f && state.rightLoadFraction < 0.f && state.heelLoadFraction < 0.f && state.foreLoadFraction < 0.f,
+           "EQ-004 load fractions are marked unavailable");
+}
+
+void testEq005() {
+    std::vector<mt::ContactImpulse> contacts = {mt::ContactImpulse{{0.f, 0.f, 0.f}, 1.f}, mt::ContactImpulse{{2.f, 0.f, 4.f}, 3.f}};
+    const mt::CenterOfPressure cop = mt::centerOfPressure(contacts);
+    expect(cop.valid, "EQ-005 synthetic impulses produce a center of pressure");
+    expect(std::fabs(cop.point.x - 1.5f) < 1e-4f && std::fabs(cop.point.z - 3.f) < 1e-4f, "EQ-005 COP is the normal-impulse weighted point");
+    expect(std::fabs(cop.totalNormalImpulse - 4.f) < 1e-4f, "EQ-005 total impulse is the sum");
+    expect(!mt::centerOfPressure({}).valid, "EQ-005 an empty set is not a center of pressure");
+    expect(!mt::centerOfPressure({mt::ContactImpulse{{1.f, 0.f, 0.f}, 0.f}}).valid, "EQ-005 a zero impulse is not a load");
+}
+
+void testEq006() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-006 laboratory loaded");
+    expect(arm(lab), "EQ-006 placed");
+    Trial trial;
+    integrate(lab, trial, 360, true);
+    const auto& state = lab.balance.state();
+    std::cout << "EQ-006 comY " << trial.minComY << " tilt " << trial.maxTilt << " toAnkle " << state.comToEquilibrium << " moment "
+              << state.estimatedAnkleMoment << '\n';
+    expect(trial.finite && trial.minComY > 0.95f && trial.maxTilt < 0.40f, "EQ-006 the stance does not drift into a fall over 3 s");
+    expect(state.comToEquilibrium < 0.08f, "EQ-006 COM stays near the ankle target");
+    expect(trial.maxTorqueOver < 0.75f, "EQ-006 motor effort stays inside the configured limits");
+}
+
+void testEq007() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-007 laboratory loaded");
+    const auto placed = mt::placeStandingPose(lab.world, lab.ragdoll, lab.balance.config());
+    std::cout << "EQ-007 comToAnkle " << placed.comToAnkleM << '\n';
+    expect(placed.ok && placed.comToAnkleM < 0.02f, "EQ-007 the ankle target is reached inside the joint limits");
+}
+
+void testEq008() {
+    mt::BalanceConfig config;
+    const mt::BalanceAxes forward = mt::balanceCorrection(config, 0.05f, 0.f, 0.f, 0.f, true, true);
+    const mt::BalanceAxes backward = mt::balanceCorrection(config, -0.05f, 0.f, 0.f, 0.f, true, true);
+    const mt::BalanceAxes right = mt::balanceCorrection(config, 0.f, 0.05f, 0.f, 0.f, true, true);
+    const mt::BalanceAxes left = mt::balanceCorrection(config, 0.f, -0.05f, 0.f, 0.f, true, true);
+    expect(forward.ankleSwing2 < 0.f && forward.hipSwing2 < 0.f, "EQ-008 a forward COM error commands extension");
+    expect(backward.ankleSwing2 > 0.f && backward.hipSwing2 > 0.f, "EQ-008 a backward COM error commands flexion");
+    expect(right.ankleSwing1 < 0.f && right.hipSwing1 < 0.f, "EQ-008 a rightward COM error commands the opposite swing1");
+    expect(left.ankleSwing1 > 0.f && left.hipSwing1 > 0.f, "EQ-008 a leftward COM error commands positive swing1");
+    expect(forward.ankleSwing2 * backward.ankleSwing2 < 0.f, "EQ-008 forward and backward ankle commands oppose");
+}
+
+void testEq009() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-009 laboratory loaded");
+    expect(arm(lab), "EQ-009 placed");
+    Trial trial;
+    integrate(lab, trial, 240, true);
+    std::cout << "EQ-009 torque over " << trial.maxTorqueOver << '\n';
+    expect(trial.maxTorqueOver < 0.5f, "EQ-009 no axis exceeds its torque limit");
+}
+
+void testEq010() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-010 laboratory loaded");
+    expect(arm(lab), "EQ-010 placed");
+    float ankle = 0.f;
+    float hip = 0.f;
+    int saturated = 0;
+    const float duration = quietDuration(lab, 3600, ankle, hip, saturated);
+    std::cout << "EQ-010 stood " << duration << " s (v0.3.1 baseline 1.39 s, primary goal 10 s)\n";
+    expect(duration >= 10.f, "EQ-010 quiet standing reaches the 10 second goal");
+}
+
+void testEq011() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-011 laboratory loaded");
+    expect(arm(lab), "EQ-011 placed");
+    Trial trial;
+    integrate(lab, trial, 120, true);
+    const auto& state = lab.balance.state();
+    std::cout << "EQ-011 points " << state.leftPoints << " " << state.rightPoints << " coplanar " << state.coplanarityM << '\n';
+    expect(state.leftPoints > 0 && state.rightPoints > 0, "EQ-011 both feet are in contact");
+    expect(state.coplanarityM < 0.003f, "EQ-011 the loaded soles are not left on one foot");
+}
+
+void testEq012() {
+    Lab lab;
+    expect(loadLab(lab, true), "EQ-012 laboratory loaded");
+    expect(arm(lab), "EQ-012 placed");
+    Trial trial;
+    integrate(lab, trial, 5, true);
+    const auto* foot = lab.ragdoll.find("foot_1");
+    float ankleLimit = -1.f;
+    for (const auto& joint : lab.ragdoll.joints) {
+        if (joint.id == "ankle_1") {
+            ankleLimit = lab.world.jointState(joint.physics).motorTorqueLimit;
+        }
+    }
+    const float friction = lab.world.bodyState(foot->physics).friction;
+    std::cout << "EQ-012 ankle limit " << ankleLimit << " mass " << foot->mass << " friction " << friction << '\n';
+    expect(lab.ragdoll.bodies.size() == 21 && lab.ragdoll.joints.size() == 20, "EQ-012 topology is unchanged");
+    expect(std::fabs(ankleLimit - 12.f) < 0.1f, "EQ-012 the ankle torque limit is still 12 N·m");
+    expect(std::fabs(foot->mass - 1.3f) < 0.05f, "EQ-012 foot mass is unchanged");
+    expect(friction > 0.6f && friction < 0.8f, "EQ-012 foot friction was not raised");
+    expect(lab.balance.config().equilibriumReference, "EQ-012 the controller tracks the ankle target");
+}
+
+void runEquilibriumTest(const std::string& which) {
+    if (which == "EQ-001") testEq001();
+    else if (which == "EQ-002") testEq002();
+    else if (which == "EQ-003") testEq003();
+    else if (which == "EQ-004") testEq004();
+    else if (which == "EQ-005") testEq005();
+    else if (which == "EQ-006") testEq006();
+    else if (which == "EQ-007") testEq007();
+    else if (which == "EQ-008") testEq008();
+    else if (which == "EQ-009") testEq009();
+    else if (which == "EQ-010") testEq010();
+    else if (which == "EQ-011") testEq011();
+    else if (which == "EQ-012") testEq012();
+    else {
+        std::cerr << "unknown equilibrium test " << which << '\n';
+        ++gFailures;
+    }
+}
+
+void runAllEquilibriumTests() {
+    testEq001();
+    testEq002();
+    testEq003();
+    testEq004();
+    testEq005();
+    testEq006();
+    testEq007();
+    testEq008();
+    testEq009();
+    testEq010();
+    testEq011();
+    testEq012();
 }
 
 void runAllBalanceTests() {

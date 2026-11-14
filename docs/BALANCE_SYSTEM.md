@@ -67,3 +67,11 @@ The standing pose searches ankle twist, swing 1, and swing 2 so the sole normal 
 Supporting contacts are labeled heel, midfoot, or forefoot by where they sit between the heel and forefoot reference points. The support area is the shoelace area of the contact hull. Fewer than three contacts is reported as not a polygon. Load is still a contact count.
 
 On the Normal preset the level soles and the heel-biased pose hold a quiet stand for about 1.4 s, then the character falls. Raising the ankle limit to 28 N·m or 48 N·m did not produce a 10 s stand, so the Active profile is unchanged at 12 N·m. Details and the failed trials are in `docs/BALANCE_STABILITY_COMPARISON.md`.
+
+## v0.3.2 equilibrium
+
+The 75/25 heel blend sat about 60 mm ahead of the ankles. At equal load that is roughly 23 N·m each, and the ankle cap is 12 N·m. The controller also used the contact-hull centroid as the error point, so a center of mass back toward the heel was commanded further forward.
+
+The pose and the feedback law now use the ankle ground projection (`feasibleSolePoint`, lead 0). The placed miss is about 7 mm. The Normal quiet stand holds for 30 s with the torso under about 0.22 rad and the support margin still positive. Gains, torque limits, and friction are the ones from v0.3.1. The unloaded soles still differ by about 12 mm left to right; the ankle limits do not have a level solution once the knees are used to close that gap, and contact closes it in the first second. See `docs/EQUILIBRIUM_ANALYSIS.md` and `docs/M3_2_EXPERIMENTS.md`.
+
+Center of pressure is not measured. The listener does not receive solved impulses. See `docs/COP_AND_LOAD_ESTIMATION.md`.
