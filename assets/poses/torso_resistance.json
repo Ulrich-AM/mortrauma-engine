@@ -1,0 +1,5 @@
+{
+  "name": "Torso Resistance",
+  "procedure": "torso_resistance",
+  "description": "Spine targets stay at the imported pelvis-relative orientation."
+}

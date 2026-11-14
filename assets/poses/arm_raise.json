@@ -1,0 +1,6 @@
+{
+  "name": "Arm Raise",
+  "procedure": "arm_raise",
+  "raise_degrees": 65,
+  "description": "Rotate one shoulder toward world up, measured in that shoulder's constraint frame."
+}

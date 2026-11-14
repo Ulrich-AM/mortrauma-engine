@@ -60,8 +60,9 @@ struct JointCreateInfo {
     std::string name;
     int parent = -1;
     int child = -1;
-    // Constraint frames in each body's local space. Frames coincide in the
-    // bind pose so the relative angle is zero. Translation is fixed.
+    // Constraint frames in each body's local space. Translation is fixed.
+    // Elbows, knees and hips use anatomical frames, so the imported pose is
+    // not the zero rotation. Other joints are centered on that pose.
     Vec3 anchorInParent{};
     Vec3 axisXInParent{1.f, 0.f, 0.f};
     Vec3 axisYInParent{0.f, 1.f, 0.f};
@@ -76,13 +77,28 @@ struct JointCreateInfo {
     float swing1Max = 0.f;
     float swing2Min = 0.f;
     float swing2Max = 0.f;
-    // Passive resistance. This is constraint friction torque, not a motor
-    // pulling toward the bind pose. Motors stay off in v0.1.
+    // Passive resistance. Constraint friction torque, independent of the
+    // active motor. Friction remains when the motor is switched off.
     float angularFriction = 2.f;
-    // Stored for a future torque-limited motor. Not enabled.
+    // Initial motor settings copied onto the constraint. The motor is created
+    // off; MotorController is what enables it.
     float motorFrequency = 0.f;
     float motorDamping = 1.f;
     float motorTorqueLimit = 80.f;
+};
+
+// Angular position drive, in the constraint frame of body 1 (the same
+// quaternion as JointState::constraintRotation). This is not a world pose.
+struct AngularMotorCommand {
+    bool enabled = false;
+    Quat targetOrientation{};
+    // Stored for velocity mode. The position drive used by M2 does not treat
+    // this as motor strength.
+    Vec3 targetAngularVelocity{};
+    float frequencyHz = 0.f;
+    float dampingRatio = 1.f;
+    // Symmetric limit in N·m. Zero disables the motor.
+    float torqueLimit = 0.f;
 };
 
 struct JointState {
@@ -119,6 +135,19 @@ struct JointState {
     float motorDamping = 0.f;
     float motorTorqueLimit = 0.f;
     bool motorEnabled = false;
+    // Relative orientation of the constraint, body-1 constraint space.
+    Quat constraintRotation{};
+    Quat motorTarget{};
+    // Motor impulse from the last step divided by the timestep, along the
+    // three rotational constraint axes. This is an estimate of torque (N·m),
+    // not a separate sensor. Zero while the motor is off. Friction impulse
+    // is not included.
+    Vec3 motorTorque{};
+    // Child angular velocity minus parent, projected on the parent constraint
+    // axes (rad/s). Jolt does not expose a joint angular velocity.
+    Vec3 relativeAngularVelocity{};
+    // True when any axis of motorTorque is at least 90% of the torque limit.
+    bool motorSaturated = false;
     bool positionLocked = false;
     bool withinLimits = false;
     std::string status;
@@ -196,6 +225,9 @@ public:
     void addImpulse(int body, Vec3 impulse, Vec3 worldPoint);
 
     JointState jointState(int joint) const;
+    // The only physics-side writer for angular motors. MotorController is the
+    // only caller that decides targets. Targets are constraint-space.
+    bool setAngularMotor(int joint, const AngularMotorCommand& command);
     bool setJointAngularFriction(int joint, float friction);
     bool setJointLimits(int joint, float twistMin, float twistMax, float swing1Min, float swing1Max, float swing2Min,
                         float swing2Max);
@@ -210,6 +242,14 @@ public:
     void updateGrab(int grab, Vec3 targetWorld);
     void endGrab(int grab);
     void clearGrabs();
+
+    // Laboratory fixture. A kinematic anchor holds the body with a soft
+    // positional spring and leaves rotation free. It is not a balance
+    // controller. clearGrabs does not remove it.
+    bool beginSupport(int body, float frequency, float damping);
+    void endSupport();
+    bool supportActive() const;
+    int supportAnchor() const;
 
     const PhysicsSettings& settings() const { return settings_; }
 

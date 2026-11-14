@@ -53,6 +53,10 @@ struct Quat {
     static Quat identity() { return {}; }
 };
 
+inline bool finite(Quat q) {
+    return std::isfinite(q.x) && std::isfinite(q.y) && std::isfinite(q.z) && std::isfinite(q.w);
+}
+
 inline float length(Quat q) { return std::sqrt(q.x * q.x + q.y * q.y + q.z * q.z + q.w * q.w); }
 
 inline Quat normalize(Quat q) {
@@ -260,5 +264,57 @@ inline float radians(float degrees) { return degrees * kPi / 180.f; }
 inline float degrees(float radiansValue) { return radiansValue * 180.f / kPi; }
 
 inline float clampf(float v, float lo, float hi) { return std::max(lo, std::min(hi, v)); }
+
+inline float dot(Quat a, Quat b) { return a.x * b.x + a.y * b.y + a.z * b.z + a.w * b.w; }
+
+inline Quat operator-(Quat q) { return {-q.x, -q.y, -q.z, -q.w}; }
+
+// Shortest-arc blend. t is clamped to [0, 1].
+inline Quat slerp(Quat a, Quat b, float t) {
+    a = normalize(a);
+    b = normalize(b);
+    float cosine = dot(a, b);
+    if (cosine < 0.f) {
+        b = -b;
+        cosine = -cosine;
+    }
+    t = clampf(t, 0.f, 1.f);
+    if (cosine > 0.9995f) {
+        return normalize(Quat{a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t, a.z + (b.z - a.z) * t, a.w + (b.w - a.w) * t});
+    }
+    const float theta = std::acos(clampf(cosine, -1.f, 1.f));
+    const float sine = std::sin(theta);
+    const float w1 = std::sin((1.f - t) * theta) / sine;
+    const float w2 = std::sin(t * theta) / sine;
+    return normalize(Quat{a.x * w1 + b.x * w2, a.y * w1 + b.y * w2, a.z * w1 + b.z * w2, a.w * w1 + b.w * w2});
+}
+
+// Rotation angle in radians, ignoring the quaternion's double cover.
+inline float quatAngle(Quat q) {
+    q = normalize(q);
+    return 2.f * std::acos(clampf(std::fabs(q.w), 0.f, 1.f));
+}
+
+// XYZ Euler used only to display a constraint quaternion. Motor control does
+// not subtract these angles; it sends the quaternion itself.
+inline Vec3 constraintEulerRadians(Quat relative) {
+    const float sinX = 2.f * (relative.w * relative.x + relative.y * relative.z);
+    const float cosX = 1.f - 2.f * (relative.x * relative.x + relative.y * relative.y);
+    const float sinY = clampf(2.f * (relative.w * relative.y - relative.z * relative.x), -1.f, 1.f);
+    const float sinZ = 2.f * (relative.w * relative.z + relative.x * relative.y);
+    const float cosZ = 1.f - 2.f * (relative.y * relative.y + relative.z * relative.z);
+    return {std::atan2(sinX, cosX), std::asin(sinY), std::atan2(sinZ, cosZ)};
+}
+
+inline Quat quatFromEulerXYZ(float x, float y, float z) {
+    const float cx = std::cos(x * 0.5f);
+    const float sx = std::sin(x * 0.5f);
+    const float cy = std::cos(y * 0.5f);
+    const float sy = std::sin(y * 0.5f);
+    const float cz = std::cos(z * 0.5f);
+    const float sz = std::sin(z * 0.5f);
+    return normalize(Quat{sx * cy * cz - cx * sy * sz, cx * sy * cz + sx * cy * sz, cx * cy * sz - sx * sy * cz,
+                          cx * cy * cz + sx * sy * sz});
+}
 
 }  // namespace mt

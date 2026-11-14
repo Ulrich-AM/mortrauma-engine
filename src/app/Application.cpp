@@ -3,6 +3,9 @@
 #include "mortrauma/assets/ModelLoader.hpp"
 #include "mortrauma/core/Log.hpp"
 #include "mortrauma/core/Paths.hpp"
+#include "mortrauma/motors/MotorController.hpp"
+#include "mortrauma/motors/PoseController.hpp"
+#include "mortrauma/poses/PoseLibrary.hpp"
 #include "mortrauma/renderer/Renderer.hpp"
 #include "mortrauma/rig/Ragdoll.hpp"
 
@@ -16,7 +19,9 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <cfloat>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <string>
 
@@ -63,6 +68,43 @@ struct App {
     ImportedModel model;
     CharacterConfig config;
     Ragdoll ragdoll;
+    MotorController motors;
+    PoseController poseController;
+    PoseLibrary poseLibrary;
+    std::string motorJoint = "elbow_1";
+    float transitionDuration = 0.6f;
+    bool drivePoseJointsOnly = true;
+    std::string poseMessage;
+    struct MotorTrace {
+        std::vector<float> targetDeg;
+        std::vector<float> measuredDeg;
+        std::vector<float> omega;
+        std::vector<float> errorDeg;
+        std::vector<float> torque;
+        std::vector<float> saturated;
+        void clear() {
+            targetDeg.clear();
+            measuredDeg.clear();
+            omega.clear();
+            errorDeg.clear();
+            torque.clear();
+            saturated.clear();
+        }
+        void push(float target, float measured, float angular, float error, float effort, float sat) {
+            auto add = [](std::vector<float>& values, float value) {
+                values.push_back(value);
+                if (values.size() > 180) {
+                    values.erase(values.begin());
+                }
+            };
+            add(targetDeg, target);
+            add(measuredDeg, measured);
+            add(omega, angular);
+            add(errorDeg, error);
+            add(torque, effort);
+            add(saturated, sat);
+        }
+    } trace;
     JointPreset preset;
     JointPreset defaultPreset;
     std::vector<int> meshGpu;
@@ -156,6 +198,22 @@ struct App {
                 world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, false);
                 world.setBodyVelocity(body.physics, {}, {});
             }
+        }
+        if (!motors.bind(world, ragdoll)) {
+            return false;
+        }
+        motors.loadDefaultProfiles();
+        poseLibrary.rebuild(world, ragdoll);
+        const auto imported = poseLibrary.importDefaultMixamo(world, ragdoll);
+        if (imported.fileFound && imported.ok) {
+            std::string saveError;
+            const auto saved = std::filesystem::path(imported.sourcePath).parent_path() / "mixamo_idle.json";
+            poseLibrary.savePose(imported.pose, saved.string(), saveError);
+            poseMessage = "Mixamo idle retargeted. " + std::to_string(imported.pose.unmapped.size()) + " joints kept the Humanoidguy reference.";
+        } else if (!imported.fileFound) {
+            poseMessage = "No Mixamo file found. Procedural poses only.";
+        } else {
+            poseMessage = imported.error;
         }
         loadEnvironment();
         for (const auto& mesh : model.meshes) {
@@ -258,9 +316,13 @@ struct App {
     }
 
     void resetSimulation() {
+        world.endSupport();
         world.clearGrabs();
         grab = -1;
+        poseController.cancel();
         resetRagdoll(world, ragdoll);
+        motors.onSimulationReset(world, ragdoll);
+        trace.clear();
         for (const auto& body : environment) {
             world.setBodyPose(body.physics, body.initialPosition, body.initialRotation, body.dynamic);
             if (body.dynamic) {
@@ -275,10 +337,63 @@ struct App {
         world.setSolverIterations(velocityIterations, positionIterations);
     }
 
-    void stepOnce() {
-        if (!world.step(world.settings().fixedTimestep, collisionSteps)) {
+    const RagdollJoint* jointById(const std::string& id) const {
+        for (const auto& joint : ragdoll.joints) {
+            if (joint.id == id) {
+                return &joint;
+            }
+        }
+        return nullptr;
+    }
+
+    void recordMotorSample() {
+        const auto* joint = jointById(motorJoint);
+        const auto* motor = motors.find(motorJoint);
+        if (joint == nullptr || motor == nullptr) {
             return;
         }
+        const auto state = world.jointState(joint->physics);
+        const Vec3 targetEuler = constraintEulerRadians(motor->target);
+        const float error = degrees(quatAngle(mul(conjugate(state.constraintRotation), motor->target)));
+        const bool cone = state.type.find("cone") != std::string::npos;
+        const float measured = cone ? degrees(state.swingAngle) : degrees(state.rotationRadians.z);
+        const float target = cone ? degrees(std::acos(clampf(rotate(motor->target, Vec3{1.f, 0.f, 0.f}).x, -1.f, 1.f))) : degrees(targetEuler.z);
+        trace.push(target, measured, state.relativeAngularVelocity.z, error, length(state.motorTorque), state.motorSaturated ? 1.f : 0.f);
+    }
+
+    void commandPose(const Pose& pose) {
+        if (pose.captureOnSelect) {
+            poseController.cancel();
+            motors.hold(world, ragdoll, {});
+            poseMessage = "Holding the current constraint pose.";
+        } else {
+            poseController.begin(pose, motors, transitionDuration);
+            if (drivePoseJointsOnly) {
+                motors.setAllActivations(0.f, true);
+                for (const auto& id : pose.driven) {
+                    motors.setJointActivation(id, 1.f, true);
+                }
+                if (motors.mode() == MotorMode::Passive) {
+                    motors.setMode(MotorMode::Active);
+                }
+            } else if (motors.mode() == MotorMode::Passive) {
+                motors.setMode(MotorMode::Active);
+                motors.activateAll();
+            }
+            poseMessage = "Transitioning to " + pose.name + ".";
+        }
+        motors.apply(world, ragdoll);
+    }
+
+    void stepOnce() {
+        const float dt = world.settings().fixedTimestep;
+        poseController.update(dt, motors);
+        motors.updateRelaxation(dt);
+        motors.apply(world, ragdoll);
+        if (!world.step(dt, collisionSteps)) {
+            return;
+        }
+        recordMotorSample();
         ++physicsStepsThisWindow;
     }
 
@@ -410,6 +525,11 @@ struct App {
             const auto state = world.bodyState(selectedBody);
             renderer.drawLine(state.position, state.position + state.linearVelocity * 0.2f, {1.f, 0.95f, 0.4f});
         }
+        if (world.supportActive()) {
+            const auto anchor = world.shapeView(world.supportAnchor());
+            renderer.drawSphere(anchor.position, 0.055f, {0.95f, 0.82f, 0.15f});
+            renderer.drawLine(anchor.position, anchor.position + Vec3{0.f, 0.55f, 0.f}, {0.95f, 0.82f, 0.15f});
+        }
         renderer.endScene();
     }
 
@@ -503,6 +623,278 @@ struct App {
         }
     }
 
+    void drawMotorLaboratory() {
+        ImGui::Begin("Motor Laboratory");
+        ImGui::TextUnformatted("Torque-limited constraint motors. Targets are joint-relative, not world poses.");
+        int modeIndex = 0;
+        if (motors.mode() == MotorMode::Compliant) {
+            modeIndex = 1;
+        } else if (motors.mode() == MotorMode::Active) {
+            modeIndex = 2;
+        } else if (motors.mode() == MotorMode::Hold) {
+            modeIndex = 3;
+        }
+        if (ImGui::Combo("Mode", &modeIndex, "Passive\0Compliant\0Active\0Hold Current Pose\0")) {
+            poseController.cancel();
+            if (modeIndex == 3) {
+                motors.hold(world, ragdoll, {});
+                poseMessage = "Holding every current constraint orientation.";
+            } else if (modeIndex == 0) {
+                motors.setMode(MotorMode::Passive);
+            } else if (modeIndex == 1) {
+                motors.setMode(MotorMode::Compliant);
+            } else {
+                motors.setMode(MotorMode::Active);
+            }
+            motors.apply(world, ragdoll);
+        }
+        const auto& gains = motors.profile(motors.mode());
+        ImGui::Text("Profile frequency %.2f Hz, damping ratio %.2f. Passive joint friction is unchanged.", gains.frequencyHz, gains.dampingRatio);
+        if (ImGui::Button("Relax All")) {
+            poseController.cancel();
+            motors.relaxAll();
+            motors.apply(world, ragdoll);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Activate All")) {
+            motors.activateAll();
+            motors.apply(world, ragdoll);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Restore Defaults")) {
+            poseController.cancel();
+            motors.restoreDefaults();
+            motors.apply(world, ragdoll);
+            trace.clear();
+        }
+        if (ImGui::Button("Hold Selected")) {
+            poseController.cancel();
+            motors.hold(world, ragdoll, {motorJoint});
+            motors.apply(world, ragdoll);
+            poseMessage = "Holding " + motorJoint + " at its current constraint orientation.";
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Hold Current Pose")) {
+            poseController.cancel();
+            motors.hold(world, ragdoll, {});
+            motors.apply(world, ragdoll);
+            poseMessage = "Holding every current constraint orientation.";
+        }
+        ImGui::Separator();
+        ImGui::TextUnformatted("Muscle groups");
+        for (const auto& group : motors.groups()) {
+            if (group.id == "other") {
+                continue;
+            }
+            ImGui::PushID(group.id.c_str());
+            ImGui::TextUnformatted(group.label.c_str());
+            float activation = group.activation;
+            float strength = group.strength;
+            if (ImGui::SliderFloat("Activation", &activation, 0.f, 1.f)) {
+                motors.setGroupActivation(group.id, activation);
+                motors.apply(world, ragdoll);
+            }
+            if (ImGui::SliderFloat("Strength (torque scale)", &strength, 0.f, 1.5f)) {
+                motors.setGroupStrength(group.id, strength);
+                motors.apply(world, ragdoll);
+            }
+            ImGui::PopID();
+        }
+        ImGui::Separator();
+        if (ImGui::BeginCombo("Joint", motorJoint.c_str())) {
+            for (const auto& joint : ragdoll.joints) {
+                if (ImGui::Selectable(joint.id.c_str(), joint.id == motorJoint)) {
+                    motorJoint = joint.id;
+                    selection = SelectionKind::Joint;
+                    selectedJoint = joint.physics;
+                    trace.clear();
+                }
+            }
+            ImGui::EndCombo();
+        }
+        if (JointMotor* motor = motors.find(motorJoint)) {
+            const auto* joint = jointById(motorJoint);
+            const auto state = joint != nullptr ? world.jointState(joint->physics) : JointState{};
+            const bool cone = state.type.find("cone") != std::string::npos;
+            float enabled = motor->activation;
+            if (ImGui::SliderFloat("Joint activation", &enabled, 0.f, 1.f)) {
+                motors.setJointActivation(motorJoint, enabled, true);
+                motors.apply(world, ragdoll);
+            }
+            ImGui::Text("Enabled %s", state.motorEnabled ? "yes" : "no");
+            const Vec3 current = state.rotationRadians;
+            const Vec3 target = constraintEulerRadians(motor->target);
+            ImGui::Text("Current Euler (deg)  twist %.1f  swing1 %.1f  swing2 %.1f", degrees(current.x), degrees(current.y), degrees(current.z));
+            ImGui::Text("Target Euler (deg)   twist %.1f  swing1 %.1f  swing2 %.1f", degrees(target.x), degrees(target.y), degrees(target.z));
+            ImGui::Text("Relative angular velocity (rad/s)  %.2f  %.2f  %.2f", state.relativeAngularVelocity.x, state.relativeAngularVelocity.y,
+                        state.relativeAngularVelocity.z);
+            ImGui::Text("Tracking error %.1f deg", degrees(quatAngle(mul(conjugate(state.constraintRotation), motor->target))));
+            ImGui::Text("Estimated motor torque |lambda|/dt (N·m)  %.2f %.2f %.2f", state.motorTorque.x, state.motorTorque.y, state.motorTorque.z);
+            ImGui::Text("Saturated %s", state.motorSaturated ? "yes" : "no");
+            float twist = degrees(target.x);
+            float swing1 = degrees(target.y);
+            float swing2 = degrees(target.z);
+            bool editedTarget = false;
+            editedTarget |= ImGui::SliderFloat("Target twist (deg)", &twist, -170.f, 170.f);
+            editedTarget |= ImGui::SliderFloat(cone ? "Target swing 1 (deg)" : "Target swing 1 (deg)", &swing1, -170.f, 170.f);
+            editedTarget |= ImGui::SliderFloat(cone ? "Target cone display (deg)" : "Target swing 2 (deg)", &swing2, -20.f, 170.f);
+            if (editedTarget) {
+                poseController.cancel();
+                motors.setTarget(motorJoint, quatFromEulerXYZ(radians(twist), radians(swing1), radians(swing2)));
+                motors.apply(world, ragdoll);
+            }
+            bool useProfile = !motor->overrideGains;
+            if (ImGui::Checkbox("Use profile gains", &useProfile)) {
+                motors.setUseProfileGains(motorJoint, useProfile);
+                motors.apply(world, ragdoll);
+            }
+            float frequency = useProfile ? gains.frequencyHz : motor->frequencyHz;
+            float damping = useProfile ? gains.dampingRatio : motor->dampingRatio;
+            float torque = useProfile ? gains.torqueFor(motorJoint) : motor->torqueLimit;
+            bool editedGains = false;
+            editedGains |= ImGui::SliderFloat("Motor frequency (Hz)", &frequency, 0.f, 12.f);
+            editedGains |= ImGui::SliderFloat("Damping ratio", &damping, 0.f, 2.f);
+            editedGains |= ImGui::SliderFloat("Torque limit (N·m)", &torque, 0.f, 80.f);
+            if (editedGains) {
+                motors.setJointGains(motorJoint, frequency, damping, torque);
+                motors.apply(world, ragdoll);
+            }
+            ImGui::TextUnformatted(cone ? "Angle graphs show the cone swing from constraint X."
+                                       : "Angle graphs show constraint Euler swing 2. The drive uses the quaternion.");
+            auto plot = [](const char* label, const std::vector<float>& values) {
+                if (!values.empty()) {
+                    ImGui::PlotLines(label, values.data(), int(values.size()), 0, nullptr, FLT_MAX, FLT_MAX, ImVec2(0.f, 56.f));
+                }
+            };
+            plot("Target angle (deg)", trace.targetDeg);
+            plot("Measured angle (deg)", trace.measuredDeg);
+            plot("Relative angular velocity on constraint Z (rad/s)", trace.omega);
+            plot("Quaternion tracking error (deg)", trace.errorDeg);
+            plot("Estimated motor torque |lambda|/dt (N·m)", trace.torque);
+            plot("Saturation (1 = within 10% of the torque limit)", trace.saturated);
+        }
+        ImGui::Separator();
+        ImGui::SliderFloat("Transition duration (s)", &transitionDuration, 0.05f, 3.f);
+        ImGui::Checkbox("Drive only the pose's joints", &drivePoseJointsOnly);
+        ImGui::TextUnformatted("Poses");
+        for (const auto& pose : poseLibrary.poses()) {
+            if (ImGui::Selectable(pose.name.c_str())) {
+                commandPose(pose);
+            }
+            if (ImGui::IsItemHovered() && !pose.description.empty()) {
+                ImGui::SetTooltip("%s", pose.description.c_str());
+            }
+        }
+        if (!poseMessage.empty()) {
+            ImGui::TextWrapped("%s", poseMessage.c_str());
+        }
+        const auto& imported = poseLibrary.lastImport();
+        if (imported.fileFound && imported.ok) {
+            ImGui::Text("Mixamo import mapped %d joints, left %d on the Humanoidguy reference.", int(imported.pose.driven.size()),
+                        int(imported.pose.unmapped.size()));
+        } else if (!imported.fileFound) {
+            ImGui::TextUnformatted("Mixamo reference was not supplied.");
+        } else {
+            ImGui::TextWrapped("Mixamo import failed: %s", imported.error.c_str());
+        }
+        ImGui::Separator();
+        ImGui::TextUnformatted("Laboratory support fixture");
+        if (world.supportActive()) {
+            ImGui::TextColored(ImVec4(0.95f, 0.82f, 0.2f, 1.f), "Fixture is ON. It is not autonomous balance.");
+            if (ImGui::Button("Remove fixture")) {
+                world.endSupport();
+            }
+        } else if (ImGui::Button("Suspend pelvis")) {
+            if (const auto* pelvis = ragdoll.find("pelvis")) {
+                world.beginSupport(pelvis->physics, 8.f, 1.f);
+            }
+        }
+        ImGui::TextWrapped("The fixture is a kinematic spring attached to the pelvis so a joint can be tested. Remove it to return to a fully dynamic scene.");
+        if (ImGui::CollapsingHeader("Disturbance experiments")) {
+            if (ImGui::Button("Arm resistance")) {
+                if (const Pose* pose = poseLibrary.find("Arm Raise Right")) {
+                    commandPose(*pose);
+                    playing = true;
+                    poseMessage = "Right arm is driving toward the raise. Push it with the Push tool.";
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Weak elbow")) {
+                poseController.cancel();
+                motors.restoreDefaults();
+                motors.setMode(MotorMode::Active);
+                motors.setTarget("elbow_1", {});
+                motors.setJointGains("elbow_1", 4.f, 1.f, 1.5f);
+                motors.setJointActivation("elbow_1", 1.f, true);
+                motors.apply(world, ragdoll);
+                motorJoint = "elbow_1";
+                playing = true;
+                poseMessage = "Elbow torque limit is 1.5 N·m. It should not lift the forearm against gravity.";
+            }
+            if (ImGui::Button("Core resistance")) {
+                if (const Pose* pose = poseLibrary.find("Torso Resistance")) {
+                    commandPose(*pose);
+                    playing = true;
+                    poseMessage = "Spine motors are holding the imported torso pose. Push the chest.";
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Asymmetric arms")) {
+                poseController.cancel();
+                motors.restoreDefaults();
+                motors.setMode(MotorMode::Active);
+                if (const Pose* pose = poseLibrary.find("Arm Raise Right")) {
+                    poseController.begin(*pose, motors, transitionDuration);
+                }
+                motors.setAllActivations(0.f, true);
+                motors.setJointActivation("shoulder_1", 1.f, true);
+                motors.setJointActivation("clavicle_1", 1.f, true);
+                motors.setJointActivation("elbow_1", 1.f, true);
+                motors.apply(world, ragdoll);
+                playing = true;
+                poseMessage = "Only the right arm is driven. The left arm stays passive.";
+            }
+            if (ImGui::Button("Relax over 3 s")) {
+                if (motors.mode() == MotorMode::Passive) {
+                    motors.setMode(MotorMode::Active);
+                }
+                motors.activateAll();
+                motors.beginRelaxation(3.f);
+                motors.apply(world, ragdoll);
+                playing = true;
+                poseMessage = "Activation is falling to zero. The body should yield instead of snapping.";
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Disable motors")) {
+                poseController.cancel();
+                motors.setMode(MotorMode::Passive);
+                motors.relaxAll();
+                motors.apply(world, ragdoll);
+                poseMessage = "All angular motors are off. Passive friction and joint limits remain.";
+            }
+        }
+        if (ImGui::Button("Save configuration")) {
+            const auto active = findAsset("configurations/motors/active.json");
+            const auto path = active.empty() ? std::filesystem::path("custom.json") : active.parent_path() / "custom.json";
+            std::string error;
+            poseMessage = motors.saveConfiguration(path.string(), error) ? "Saved " + path.string() : error;
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Load configuration")) {
+            const auto active = findAsset("configurations/motors/active.json");
+            const auto path = active.empty() ? std::filesystem::path("custom.json") : active.parent_path() / "custom.json";
+            std::string error;
+            if (motors.loadConfiguration(path.string(), error)) {
+                poseController.cancel();
+                motors.apply(world, ragdoll);
+                poseMessage = "Loaded " + path.string();
+            } else {
+                poseMessage = error;
+            }
+        }
+        ImGui::End();
+    }
+
     void drawUi() {
         const ImGuiViewport* viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->WorkPos);
@@ -536,6 +928,7 @@ struct App {
             ImGui::DockBuilderDockWindow("Physics", bottom);
             ImGui::DockBuilderDockWindow("Diagnostics", bottom);
             ImGui::DockBuilderDockWindow("Joint inspector", right);
+            ImGui::DockBuilderDockWindow("Motor Laboratory", right);
             ImGui::DockBuilderFinish(dockspace);
         }
         ImGui::End();
@@ -544,6 +937,9 @@ struct App {
         if (model.report.usedFallback) {
             ImGui::TextColored(ImVec4(1.f, 0.45f, 0.35f, 1.f), "Asset import failed. Procedural fallback is visible.");
             ImGui::TextWrapped("%s", model.report.error.c_str());
+        }
+        if (world.supportActive()) {
+            ImGui::TextColored(ImVec4(0.95f, 0.82f, 0.2f, 1.f), "Laboratory support fixture is holding the pelvis. This is not balance.");
         }
         const ImVec2 available = ImGui::GetContentRegionAvail();
         const int width = std::max(1, int(available.x));
@@ -557,6 +953,9 @@ struct App {
 
         ImGui::Begin("Hierarchy");
         if (ImGui::TreeNodeEx("Environment", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (world.supportActive()) {
+                ImGui::TextColored(ImVec4(0.95f, 0.82f, 0.2f, 1.f), "Laboratory support fixture");
+            }
             for (const auto& body : environment) {
                 if (ImGui::Selectable(body.name.c_str(), selection == SelectionKind::Body && selectedBody == body.physics)) {
                     selection = SelectionKind::Body;
@@ -683,7 +1082,13 @@ struct App {
             ImGui::Text("Angular friction  %.2f Nm", state.angularFriction);
             ImGui::Text("Constraint error  %.4f m", state.separation);
             ImGui::Text("Status  %s", state.status.c_str());
-            ImGui::TextUnformatted("Motors are off. Limits are measured from the anatomical neutral, not from the imported crouch.");
+            ImGui::Text("Motor  %s   frequency %.2f Hz   damping %.2f   torque limit %.1f Nm", state.motorEnabled ? "on" : "off",
+                        state.motorFrequency, state.motorDamping, state.motorTorqueLimit);
+            if (state.motorEnabled) {
+                ImGui::Text("Estimated motor torque  %.2f  %.2f  %.2f Nm   saturated %s", state.motorTorque.x, state.motorTorque.y,
+                            state.motorTorque.z, state.motorSaturated ? "yes" : "no");
+            }
+            ImGui::TextUnformatted("Limits are measured from the anatomical neutral, not from the imported crouch.");
             if (!playing) {
                 float twistMin = degrees(state.twistMin);
                 float twistMax = degrees(state.twistMax);
@@ -869,6 +1274,7 @@ struct App {
             }
         }
         ImGui::End();
+        drawMotorLaboratory();
     }
 };
 

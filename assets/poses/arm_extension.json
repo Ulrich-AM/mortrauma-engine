@@ -1,0 +1,5 @@
+{
+  "name": "Arm Extension",
+  "procedure": "arm_extension",
+  "description": "Elbow target is the identity constraint rotation, which is anatomical extension."
+}
