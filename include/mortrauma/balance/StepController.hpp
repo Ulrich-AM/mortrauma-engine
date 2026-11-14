@@ -13,7 +13,8 @@ enum class StepPhase {
     Idle,
     TransferWeight,
     StabilizeSupport,
-    UnloadSwingFoot,
+    BeginUnloading,
+    ConfirmSupport,
     LiftFoot,
     HoldFoot,
     LowerFoot,
@@ -23,7 +24,7 @@ enum class StepPhase {
     Falling
 };
 
-enum class StepMode { None, Transfer, Support, Lift, Sequence, Recover };
+enum class StepMode { None, Transfer, Support, Unload, Lift, Sequence, Recover };
 
 const char* stepPhaseName(StepPhase phase);
 
@@ -34,6 +35,7 @@ class StepController {
 public:
     void requestTransfer(bool supportRight);
     void requestSupport(bool supportRight);
+    void requestUnload(bool supportRight);
     void requestLift(bool supportRight);
     void requestLower();
     void requestSequence(bool supportRight);
@@ -74,6 +76,13 @@ public:
     float heightError() const { return heightError_; }
     float hipSwing1Command() const { return hipSwing1_; }
     float peakUprightClearance() const { return peakUprightClearance_; }
+    float swingVerticalVelocity() const { return swingVerticalVelocity_; }
+    float stanceSlip() const { return stanceSlip_; }
+    float stanceAnkleTorque() const { return stanceAnkleTorque_; }
+    float stanceHipTorque() const { return stanceHipTorque_; }
+    float jacobianHip() const { return jacobianHip_; }
+    float jacobianKnee() const { return jacobianKnee_; }
+    bool loadMeasured() const { return false; }
     const std::string& supportEstimate() const { return supportEstimate_; }
     const std::string& note() const { return note_; }
     const std::string& failure() const { return failure_; }
@@ -106,6 +115,14 @@ private:
     float heightError_ = 0.f;
     float baseSoleY_ = 0.f;
     float peakUprightClearance_ = 0.f;
+    float previousSoleY_ = 0.f;
+    float swingVerticalVelocity_ = 0.f;
+    float stanceSlip_ = 0.f;
+    float stanceAnkleTorque_ = 0.f;
+    float stanceHipTorque_ = 0.f;
+    float jacobianHip_ = 0.12f;
+    float jacobianKnee_ = 0.22f;
+    float unloadSoleY_ = 0.f;
     int swingPointsAtEntry_ = 0;
     Vec3 direction_{0.f, 0.f, -1.f};
     Vec3 offset_{};

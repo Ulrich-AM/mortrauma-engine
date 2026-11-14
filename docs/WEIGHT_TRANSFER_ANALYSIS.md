@@ -37,3 +37,5 @@ From a center of mass 33 mm left of the equilibrium, over 4 s, center of mass he
 | Right foot | +14 mm | 47 mm | The shift completes and the reference returns to two-foot standing. |
 
 Both requests move the body toward the selected foot. The rightward pair is the weaker of the two measured hip pairs, and the shift does not reach the foot. Torque limits were not raised.
+
+v0.4.2 measured the same shifts again before changing the unload logic: 53 mm toward the left foot and 47 mm toward the right foot, with the center of mass still near 1.01 m. The support target was not moved closer to the foot. A 50 N·m hip can hold the full 77 kg only about 6 cm from the ankle, and the feet are 23 to 31 cm from the midline.

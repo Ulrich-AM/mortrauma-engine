@@ -95,3 +95,7 @@ The foot box sole is the visible underside, not the face perpendicular to the fo
 ## v0.4.1 weight shift
 
 The v0.4.0 rightward miss was not a weaker right hip. Both hip constraints use one facing axis for swing1, so the same Euler sign abducts one thigh and adducts the other. The standing law still applies that shared sign. A weight shift adds the opposite sign on hip 2, with the same magnitude, plus an integral of the lateral error. The target is a few centimetres toward the selected foot, rate-limited, not the foot center. On that target the center of mass moved 53 mm toward the left foot and 47 mm toward the right foot. The right-foot attempt then restored two-foot standing. The swing foot's contact count did not fall, so the lift was refused. Torque limits, friction, and the sole geometry are unchanged. See `docs/WEIGHT_TRANSFER_ANALYSIS.md`.
+
+## v0.4.2 unloading
+
+The lift no longer waits for the swing-foot contact count to reach zero. After the weight shift, the swing knee is commanded to shorten by up to 0.12 rad while the swing hip stays under the balance law. Solved contact impulses are still unavailable, so this is not a measured load. The sole rise under that command is about 1 mm, which is stance noise, and the center of mass stays near 1.01 m. Raising the same knee command to 0.35 rad, or flexing the swing hip as well, tips the body before the sole clears. The attempt then lowers and clears its bias. See `docs/ACTIVE_FOOT_UNLOADING.md`.

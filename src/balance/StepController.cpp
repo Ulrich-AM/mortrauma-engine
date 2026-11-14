@@ -38,6 +38,35 @@ float horizontal(Vec3 value) { return length(flat(value)); }
 // opposite sign on hip_2. The magnitude is the same on both sides.
 float mirroredHipSwing(float comMinusTargetAlongRight) { return clampf(-2.2f * comMinusTargetAlongRight, -0.30f, 0.30f); }
 
+float torqueMagnitude(Vec3 torque) {
+    return std::max(std::fabs(torque.x), std::max(std::fabs(torque.y), std::fabs(torque.z)));
+}
+
+// World-vertical motion of the ankle per radian of positive swing2, from the
+// current hip and knee axes. A fixed 0.12 / 0.22 pair is only the fallback
+// when the measured axes are degenerate.
+void measureColumns(const PhysicsWorld& world, const Ragdoll& ragdoll, const char* hipId, const char* kneeId, const char* ankleId, float& hipColumn, float& kneeColumn) {
+    const RagdollJoint* hip = findJoint(ragdoll, hipId);
+    const RagdollJoint* knee = findJoint(ragdoll, kneeId);
+    const RagdollJoint* ankle = findJoint(ragdoll, ankleId);
+    if (hip == nullptr || knee == nullptr || ankle == nullptr) {
+        return;
+    }
+    const auto hipState = world.jointState(hip->physics);
+    const auto kneeState = world.jointState(knee->physics);
+    const auto ankleState = world.jointState(ankle->physics);
+    if (!hipState.valid || !kneeState.valid || !ankleState.valid) {
+        return;
+    }
+    const Vec3 fromHip = cross(hipState.bendAxisWorld, ankleState.anchorParentWorld - hipState.anchorParentWorld);
+    const Vec3 fromKnee = cross(kneeState.bendAxisWorld, ankleState.anchorParentWorld - kneeState.anchorParentWorld);
+    if (std::fabs(fromHip.y) + std::fabs(fromKnee.y) < 0.02f) {
+        return;
+    }
+    hipColumn = fromHip.y;
+    kneeColumn = fromKnee.y;
+}
+
 }  // namespace
 
 const char* stepPhaseName(StepPhase phase) {
@@ -45,7 +74,8 @@ const char* stepPhaseName(StepPhase phase) {
         case StepPhase::Idle: return "Idle";
         case StepPhase::TransferWeight: return "TransferWeight";
         case StepPhase::StabilizeSupport: return "StabilizeSupport";
-        case StepPhase::UnloadSwingFoot: return "UnloadSwingFoot";
+        case StepPhase::BeginUnloading: return "BeginUnloading";
+        case StepPhase::ConfirmSupport: return "ConfirmSupport";
         case StepPhase::LiftFoot: return "LiftFoot";
         case StepPhase::HoldFoot: return "HoldFoot";
         case StepPhase::LowerFoot: return "LowerFoot";
@@ -76,6 +106,9 @@ void StepController::begin(StepMode mode, bool supportRight) {
     hipSwing1_ = 0.f;
     hipIntegral_ = 0.f;
     peakUprightClearance_ = 0.f;
+    previousSoleY_ = 0.f;
+    swingVerticalVelocity_ = 0.f;
+    unloadSoleY_ = 0.f;
     baseSoleY_ = 0.f;
     failure_.clear();
     note_ = "started";
@@ -84,6 +117,8 @@ void StepController::begin(StepMode mode, bool supportRight) {
 void StepController::requestTransfer(bool supportRight) { begin(StepMode::Transfer, supportRight); }
 
 void StepController::requestSupport(bool supportRight) { begin(StepMode::Support, supportRight); }
+
+void StepController::requestUnload(bool supportRight) { begin(StepMode::Unload, supportRight); }
 
 void StepController::requestLift(bool supportRight) { begin(StepMode::Lift, supportRight); }
 
@@ -103,7 +138,7 @@ void StepController::requestRecovery(bool supportRight, Vec3 directionWorld) {
 }
 
 void StepController::requestLower() {
-    if (phase_ == StepPhase::LiftFoot || phase_ == StepPhase::HoldFoot || phase_ == StepPhase::UnloadSwingFoot) {
+    if (phase_ == StepPhase::LiftFoot || phase_ == StepPhase::HoldFoot || phase_ == StepPhase::BeginUnloading || phase_ == StepPhase::ConfirmSupport) {
         phase_ = StepPhase::LowerFoot;
         phaseTime_ = 0.f;
         settleTime_ = 0.f;
@@ -172,6 +207,8 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
     const char* swingHip = supportRight_ ? "hip_2" : "hip_1";
     const char* swingKnee = supportRight_ ? "knee_2" : "knee_1";
     const char* swingAnkle = supportRight_ ? "ankle_2" : "ankle_1";
+    const char* stanceAnkle = supportRight_ ? "ankle_1" : "ankle_2";
+    const char* stanceHip = supportRight_ ? "hip_1" : "hip_2";
     const RagdollBody* stance = findBody(ragdoll, stanceId);
     const RagdollBody* swing = findBody(ragdoll, swingId);
     const bool stanceGrounded = supportRight_ ? state.rightGrounded : state.leftGrounded;
@@ -194,6 +231,29 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
         swingActual_ = (heel + toe) * 0.5f;
     }
     swingClearance_ = sole;
+    if (dt > 1e-5f && previousSoleY_ != 0.f) {
+        swingVerticalVelocity_ = (sole - previousSoleY_) / dt;
+    }
+    previousSoleY_ = sole;
+    if (stance != nullptr) {
+        const auto stanceSample = world.bodyState(stance->physics);
+        stanceSlip_ = horizontal(stanceSample.linearVelocity);
+    }
+    stanceAnkleTorque_ = 0.f;
+    stanceHipTorque_ = 0.f;
+    if (const RagdollJoint* ankle = findJoint(ragdoll, stanceAnkle)) {
+        const auto sample = world.jointState(ankle->physics);
+        if (sample.valid) {
+            stanceAnkleTorque_ = torqueMagnitude(sample.motorTorque);
+        }
+    }
+    if (const RagdollJoint* hip = findJoint(ragdoll, stanceHip)) {
+        const auto sample = world.jointState(hip->physics);
+        if (sample.valid) {
+            stanceHipTorque_ = torqueMagnitude(sample.motorTorque);
+        }
+    }
+    measureColumns(world, ragdoll, swingHip, swingKnee, swingAnkle, jacobianHip_, jacobianKnee_);
 
     if (state.leftGrounded && state.rightGrounded) {
         supportEstimate_ = "both feet touching; contact counts are not loads";
@@ -206,6 +266,14 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
     }
     if (stancePoints > 0 && swingPoints == 0) {
         supportEstimate_ += supportRight_ ? "; right contact only" : "; left contact only";
+    }
+    supportEstimate_ += "; solved contact impulse is not available";
+    if (state.totalMass > 1.f && stance != nullptr) {
+        const float arm = horizontal(flat(state.com - stancePos));
+        const float moment = state.totalMass * 9.81f * arm;
+        if (moment > 50.f) {
+            supportEstimate_ += "; full weight at this arm exceeds the 50 N·m hip";
+        }
     }
 
     const Vec3 equilibrium = state.equilibriumValid ? flat(state.equilibriumTarget) : flat(state.com);
@@ -278,36 +346,48 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
         settleTime_ = 0.f;
     }
 
-    const bool lifting = phase_ == StepPhase::LiftFoot || phase_ == StepPhase::HoldFoot || phase_ == StepPhase::LowerFoot;
+    const bool unloading = phase_ == StepPhase::BeginUnloading || phase_ == StepPhase::ConfirmSupport;
+    const bool lifting = unloading || phase_ == StepPhase::LiftFoot || phase_ == StepPhase::HoldFoot || phase_ == StepPhase::LowerFoot;
     if (lifting) {
         float desired = 0.f;
-        if (phase_ == StepPhase::LiftFoot) {
+        if (phase_ == StepPhase::BeginUnloading) {
+            desired = 0.008f * clampf(phaseTime_ / 0.8f, 0.f, 1.f);
+        } else if (phase_ == StepPhase::ConfirmSupport) {
+            desired = 0.008f;
+        } else if (phase_ == StepPhase::LiftFoot) {
             const float ramp = clampf(phaseTime_ / std::max(liftDuration_, 0.3f), 0.f, 1.f);
             desired = liftHeight_ * ramp;
         } else if (phase_ == StepPhase::HoldFoot) {
             desired = liftHeight_;
         } else {
             const float ramp = clampf(phaseTime_ / std::max(liftDuration_, 0.3f), 0.f, 1.f);
-            desired = liftHeight_ * (1.f - ramp);
+            desired = std::max(0.f, (sole - baseSoleY_) * (1.f - ramp));
         }
         desiredClearance_ = desired;
-        swingTargetHeight_ = baseSoleY_ + desiredClearance_;
+        const float referenceSole = unloading ? unloadSoleY_ : baseSoleY_;
+        swingTargetHeight_ = referenceSole + desiredClearance_;
         heightError_ = swingTargetHeight_ - sole;
-        // Damped least-squares step of a 1x2 Jacobian. The columns are the
-        // expected sole rise, in metres per radian, of swing-hip flexion and
-        // swing-knee flexion. The residual is the measured height error.
-        // Metres per radian, from a two-link leg at a standing knee bend.
-        // One damped step per frame, with the height error clamped so a bad
-        // reading cannot demand a full extension in a single tick.
-        const float hipColumn = 0.12f;
-        const float kneeColumn = 0.22f;
-        const float damping = 0.01f;
+        // Columns are metres of ankle rise per radian of positive swing2,
+        // measured from the current leg. The per-frame height error and the
+        // joint step are capped so the swing foot is not kicked off the floor.
+        // Positive swing2 flexes the hip and the knee. The bend-axis cross
+        // product's sign did not match that motor direction, so the sign is
+        // taken from the joint definition and only the magnitude is measured.
+        const float hipColumn = std::max(std::fabs(jacobianHip_), 0.05f);
+        const float kneeColumn = std::max(std::fabs(jacobianKnee_), 0.05f);
+        const float damping = 0.02f;
         const float denominator = hipColumn * hipColumn + kneeColumn * kneeColumn + damping;
-        const float bounded = clampf(heightError_, -0.006f, 0.006f);
-        flexHip_ += (hipColumn / denominator) * bounded;
-        flexKnee_ += (kneeColumn / denominator) * bounded;
+        const float bounded = clampf(heightError_, -0.004f, 0.004f);
+        flexHip_ += clampf((hipColumn / denominator) * bounded, -0.006f, 0.006f);
+        flexKnee_ += clampf((kneeColumn / denominator) * bounded, -0.006f, 0.006f);
+        const bool unloadingNow = phase_ == StepPhase::BeginUnloading || phase_ == StepPhase::ConfirmSupport;
+        // Hip flexion while the foot is planted pitches the pelvis. Unloading
+        // shortens the swing knee and leaves the swing hip to balance.
+        if (unloadingNow) {
+            flexHip_ = 0.f;
+        }
         flexHip_ = clampf(flexHip_, 0.f, 0.85f);
-        flexKnee_ = clampf(flexKnee_, 0.f, 1.05f);
+        flexKnee_ = clampf(flexKnee_, 0.f, unloadingNow ? 0.12f : 1.05f);
         if (const RagdollJoint* knee = findJoint(ragdoll, swingKnee)) {
             const auto joint = world.jointState(knee->physics);
             if (joint.valid && joint.rotationRadians.z > joint.swing2Max - 0.08f) {
@@ -351,40 +431,62 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
         }
     } else if (phase_ == StepPhase::StabilizeSupport) {
         if (stanceGrounded && (settleTime_ > 0.15f || (phaseTime_ > 0.40f && comError_ < 0.035f && upright))) {
-            phase_ = StepPhase::UnloadSwingFoot;
+            phase_ = StepPhase::BeginUnloading;
             phaseTime_ = 0.f;
             settleTime_ = 0.f;
             swingPointsAtEntry_ = swingPoints;
             baseSoleY_ = sole;
-            note_ = "support settled";
+            unloadSoleY_ = sole;
+            note_ = "support settled; unloading the swing leg";
         } else if (phaseTime_ > 1.0f) {
             fail("support did not settle");
         }
-    } else if (phase_ == StepPhase::UnloadSwingFoot) {
-        const bool unloaded = swingPoints == 0 || (swingPoints < swingPointsAtEntry_ && sole > baseSoleY_ + 0.008f);
-        const bool supportOk = stanceGrounded && stancePoints > 0 && upright && comError_ < 0.035f;
-        if (!stanceGrounded && phaseTime_ > 0.10f) {
-            fail("supporting foot lost contact");
-        } else if (mode_ == StepMode::Support) {
-            if (phaseTime_ > holdDuration_ + 0.3f) {
-                phase_ = StepPhase::RestoreSupport;
-                phaseTime_ = 0.f;
-                note_ = unloaded ? "single-leg contact estimate, returning" : "swing foot stayed in contact; lift refused";
-            }
-        } else if (unloaded && supportOk) {
-            phase_ = StepPhase::LiftFoot;
-            phaseTime_ = 0.f;
-            baseSoleY_ = sole;
-            swingOrigin_ = swingActual_;
-            note_ = "swing foot unloaded; lifting";
-        } else if (phaseTime_ > 1.0f) {
-            fail("swing foot did not unload; lift refused");
-        }
-    } else if (phase_ == StepPhase::LiftFoot) {
-        if (!stanceGrounded && phaseTime_ > 0.08f) {
+    } else if (phase_ == StepPhase::BeginUnloading) {
+        // Solved contact impulses are not available. A drop in contact count
+        // is recorded and is not treated as a load. The upward command starts
+        // while the swing foot may still be touching. Continuation requires
+        // the sole to rise, or contacts to drop together with a rise, while
+        // the stance foot is still holding the torso up.
+        const bool stanceStable = stanceGrounded && stancePoints > 0 && state.com.y > 0.94f && state.torsoTilt < 0.32f && stanceSlip_ < 0.12f;
+        const float rise = sole - unloadSoleY_;
+        const bool rose = rise > 0.004f && swingVerticalVelocity_ > -0.05f;
+        const bool contactsAndRise = swingPoints < swingPointsAtEntry_ && rise > 0.001f;
+        if (!stanceStable && phaseTime_ > 0.12f) {
             phase_ = StepPhase::LowerFoot;
             phaseTime_ = 0.f;
-            note_ = "support lost during the lift; lowering";
+            note_ = "unloading stopped; the stance left the stable region";
+        } else if (stanceStable && (rose || contactsAndRise) && phaseTime_ > 0.20f) {
+            phase_ = StepPhase::ConfirmSupport;
+            phaseTime_ = 0.f;
+            note_ = rose ? "sole rose while the stance foot held" : "swing contacts dropped with a sole rise; not a load measurement";
+        } else if (phaseTime_ > 1.6f) {
+            fail("unloading command did not raise the swing foot");
+        }
+    } else if (phase_ == StepPhase::ConfirmSupport) {
+        const bool stanceStable = stanceGrounded && state.com.y > 0.94f && state.torsoTilt < 0.38f && stanceSlip_ < 0.12f;
+        if (!stanceStable && phaseTime_ > 0.08f) {
+            phase_ = StepPhase::LowerFoot;
+            phaseTime_ = 0.f;
+            note_ = "support confirmation lost the stance";
+        } else if (phaseTime_ > 0.25f) {
+            if (mode_ == StepMode::Lift || mode_ == StepMode::Sequence) {
+                phase_ = StepPhase::LiftFoot;
+                phaseTime_ = 0.f;
+                baseSoleY_ = unloadSoleY_;
+                swingOrigin_ = swingActual_;
+                note_ = "unload confirmed; lifting";
+            } else {
+                phase_ = StepPhase::RestoreSupport;
+                phaseTime_ = 0.f;
+                note_ = "unload confirmed; lift was not requested";
+            }
+        }
+    } else if (phase_ == StepPhase::LiftFoot) {
+        const bool stanceStable = stanceGrounded && state.com.y > 0.94f && state.torsoTilt < 0.42f && stanceSlip_ < 0.15f;
+        if (!stanceStable && phaseTime_ > 0.08f) {
+            phase_ = StepPhase::LowerFoot;
+            phaseTime_ = 0.f;
+            note_ = "lift reduced; the stance left the stable region";
         } else if (desiredClearance_ >= liftHeight_ - 1e-3f && sole - baseSoleY_ > liftHeight_ * 0.75f && upright) {
             phase_ = StepPhase::HoldFoot;
             phaseTime_ = 0.f;
@@ -412,8 +514,6 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
         if (down) {
             phase_ = StepPhase::RestoreSupport;
             phaseTime_ = 0.f;
-            flexHip_ = 0.f;
-            flexKnee_ = 0.f;
             note_ = "swing foot contact returned";
         } else if (phaseTime_ > liftDuration_ + 0.8f) {
             phase_ = StepPhase::RestoreSupport;
@@ -421,14 +521,26 @@ void StepController::update(float dt, const PhysicsWorld& world, const BalanceSt
             note_ = swingTouching ? "lower timed out with the foot touching" : "lower timed out with the foot still up";
         }
     } else if (phase_ == StepPhase::RestoreSupport) {
+        if (phaseTime_ <= dt + 1e-4f) {
+            settleTime_ = 0.f;
+        }
         const bool restored = horizontal(offset_) < 0.008f && flexKnee_ < 0.08f && state.leftTouching && state.rightTouching;
         if (restored) {
+            settleTime_ += dt;
+        } else {
+            settleTime_ = 0.f;
+        }
+        if (restored && settleTime_ > 0.20f) {
             phase_ = StepPhase::Completed;
             phaseTime_ = 0.f;
             offset_ = {};
             flexHip_ = 0.f;
             flexKnee_ = 0.f;
-            note_ = failure_.empty() ? "returned to two-foot balance" : failure_;
+            if (!failure_.empty()) {
+                note_ = failure_;
+            } else if (note_.find("rose") == std::string::npos && note_.find("confirmed") == std::string::npos && note_.find("stopped") == std::string::npos) {
+                note_ = "returned to two-foot balance";
+            }
             publish(balance, {}, {});
             return;
         }
