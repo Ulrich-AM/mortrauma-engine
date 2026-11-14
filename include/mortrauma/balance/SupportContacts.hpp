@@ -46,4 +46,28 @@ SupportEstimate estimateSupport(const PhysicsWorld& world, const Ragdoll& ragdol
 float supportMargin(const std::vector<Vec3>& hull, Vec3 groundPoint);
 float distanceOutsideSupport(const std::vector<Vec3>& hull, Vec3 groundPoint);
 
+// One solved normal impulse. The live listener in this Jolt pin does not
+// provide these; the struct exists so a center of pressure can be tested
+// with synthetic impulses and so a future solver hook has a place to land.
+struct ContactImpulse {
+    Vec3 point{};
+    float normalImpulse = 0.f;
+};
+
+struct CenterOfPressure {
+    bool valid = false;
+    Vec3 point{};
+    float totalNormalImpulse = 0.f;
+};
+
+// Normal-load-weighted center. Invalid when every impulse is missing or not
+// positive, so a contact count cannot be mistaken for a force.
+CenterOfPressure centerOfPressure(const std::vector<ContactImpulse>& contacts);
+
+// Quiet-stand point on the sole. The static moment about the ankle is the
+// weight times the horizontal distance from the ankle, so the point sits on
+// the ankle's ground projection, shifted `leadM` toward the toes and clamped
+// onto the heel-to-forefoot segment. leadM of 0 needs no static ankle moment.
+Vec3 feasibleSolePoint(Vec3 ankleWorld, Vec3 heelWorld, Vec3 foreWorld, float leadM);
+
 }  // namespace mt

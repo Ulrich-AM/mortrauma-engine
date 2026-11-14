@@ -28,6 +28,10 @@ struct BalanceDiagnostics {
     bool showSoleFrame = false;
     bool showHeel = true;
     bool showForefoot = true;
+    bool showSolePlane = true;
+    bool showEquilibrium = true;
+    bool showCop = true;
+    bool showAnkleTorque = true;
     float time = 0.f;
     std::vector<BalanceSample> history;
 };

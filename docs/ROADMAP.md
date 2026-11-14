@@ -12,6 +12,8 @@ Implemented in v0.3.0 for one Humanoidguy. The controller reads a mass-weighted 
 
 v0.3.1 (M3.1) replaces the foot capsules with a flat sole box and levels that sole in the standing pose. Contacts are labeled heel, midfoot, or forefoot. The quiet stand on the unchanged Normal controller lasts about 1.4 s. The 10 s target was not reached. See `docs/FOOT_COLLISION.md` and `docs/BALANCE_STABILITY_COMPARISON.md`.
 
+v0.3.2 (M3.2) moves the standing reference from the heel blend onto the ankles. The same torque limits then hold a 30 s quiet stand. The torso still sways by about 10°, the unloaded feet differ by about 12 mm, and contact impulses are not measured. See `docs/EQUILIBRIUM_ANALYSIS.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.

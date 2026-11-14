@@ -34,6 +34,11 @@ struct RagdollBody {
     Vec3 soleForwardLocal{0.f, 1.f, 0.f};
     Vec3 heelLocal{};
     Vec3 forefootLocal{};
+    // Vertices within 5 mm of the fitted bottom face, and how far the 10th
+    // percentile sits above that face. A large gap means one low vertex, not
+    // a flat sole, defined the collider.
+    int soleUndersideVertices = 0;
+    float soleUndersideGapM = 0.f;
     Vec3 initialPosition{};
     Quat initialRotation{};
     // boneBind = bodyBind * boneFromBody. Stored as body-local bone transform.

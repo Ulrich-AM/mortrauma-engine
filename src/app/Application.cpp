@@ -26,6 +26,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <vector>
 
 namespace mt {
 namespace {
@@ -141,6 +142,8 @@ struct App {
     PushDirection pushDirection = PushDirection::Camera;
     float balanceImpulse = 12.f;
     int balancePushBody = 0;
+    bool recordTrial = false;
+    std::vector<std::string> trialRows;
     int grab = -1;
     Vec3 grabPlanePoint{};
     Vec3 grabPlaneNormal{};
@@ -461,6 +464,17 @@ struct App {
             return;
         }
         recordMotorSample();
+        if (recordTrial) {
+            const BalanceState& s = balance.state();
+            const auto line = std::to_string(balance.diagnostics().time) + "," + std::to_string(s.com.x) + "," + std::to_string(s.com.y) + "," +
+                              std::to_string(s.com.z) + "," + std::to_string(s.comVelocity.x) + "," + std::to_string(s.comVelocity.z) + "," +
+                              std::to_string(s.torsoTilt) + "," + std::to_string(s.equilibriumTarget.x) + "," + std::to_string(s.equilibriumTarget.z) +
+                              "," + std::to_string(s.comToEquilibrium) + "," + std::to_string(s.coplanarityM) + "," +
+                              std::to_string(s.estimatedAnkleMoment) + "," + std::to_string(s.ankleEffort) + "," + std::to_string(s.hipEffort) + "," +
+                              std::to_string(s.saturatedMotors) + "," + std::to_string(s.margin) + "," + balancePhaseName(s.phase) + "," +
+                              (s.copAvailable ? "1" : "0");
+            trialRows.push_back(line);
+        }
         ++physicsStepsThisWindow;
     }
 
@@ -643,7 +657,16 @@ struct App {
             if (overlays.showCorrection && length(balanceState.correction) > 1e-4f) {
                 renderer.drawLine(balanceState.comProjection, balanceState.comProjection + balanceState.correction, {1.f, 0.35f, 0.8f});
             }
-            if (overlays.showSoleFrame || overlays.showHeel || overlays.showForefoot || overlays.showFootCollider) {
+            if (overlays.showEquilibrium && balanceState.equilibriumValid) {
+                const Vec3 mark{balanceState.equilibriumTarget.x, 0.02f, balanceState.equilibriumTarget.z};
+                renderer.drawSphere(mark, 0.025f, {0.2f, 0.85f, 0.95f});
+                renderer.drawLine(balanceState.comProjection, mark, {0.2f, 0.85f, 0.95f});
+            }
+            if (overlays.showCop && balanceState.copAvailable) {
+                renderer.drawSphere(balanceState.cop + Vec3{0.f, 0.03f, 0.f}, 0.02f, {0.95f, 0.2f, 0.85f});
+            }
+            if (overlays.showSoleFrame || overlays.showSolePlane || overlays.showHeel || overlays.showForefoot || overlays.showFootCollider ||
+                overlays.showAnkleTorque) {
                 for (const char* footId : {"foot_1", "foot_2"}) {
                     const auto* foot = ragdoll.find(footId);
                     if (foot == nullptr) {
@@ -668,6 +691,18 @@ struct App {
                         renderer.drawLine(origin, origin + up * 0.12f, {0.9f, 0.9f, 0.95f});
                         renderer.drawLine(heel, toe, {0.85f, 0.7f, 0.3f});
                     }
+                    if (overlays.showSolePlane && foot->collider == BodyCreateInfo::Shape::Box) {
+                        const float halfWidth = foot->boxHalfExtents.x;
+                        const Vec3 heelLeft = heel - side * halfWidth;
+                        const Vec3 heelRight = heel + side * halfWidth;
+                        const Vec3 toeLeft = toe - side * halfWidth;
+                        const Vec3 toeRight = toe + side * halfWidth;
+                        const Vec3 plane{0.55f, 0.85f, 0.75f};
+                        renderer.drawLine(heelLeft, heelRight, plane);
+                        renderer.drawLine(toeLeft, toeRight, plane);
+                        renderer.drawLine(heelLeft, toeLeft, plane);
+                        renderer.drawLine(heelRight, toeRight, plane);
+                    }
                     if (overlays.showFootCollider) {
                         const auto viewShape = world.shapeView(foot->physics);
                         const Vec3 center = viewShape.position + rotate(viewShape.rotation, viewShape.centerOffset);
@@ -678,6 +713,19 @@ struct App {
                             renderer.drawCapsule(viewShape.position, viewShape.rotation, viewShape.radius, viewShape.halfHeight, {0.45f, 0.55f, 0.75f});
                         }
                     }
+                }
+            }
+            if (overlays.showAnkleTorque) {
+                for (const auto& joint : ragdoll.joints) {
+                    if (joint.id != "ankle_1" && joint.id != "ankle_2") {
+                        continue;
+                    }
+                    const JointState sample = world.jointState(joint.physics);
+                    if (!sample.valid) {
+                        continue;
+                    }
+                    const Vec3 tip = sample.anchorChildWorld + sample.bendAxisWorld * (sample.motorTorque.z * 0.012f);
+                    renderer.drawLine(sample.anchorChildWorld, tip, {0.95f, 0.45f, 0.2f});
                 }
             }
         }
@@ -865,6 +913,56 @@ struct App {
             ImGui::Text("Support area %.4f m^2  (%s)  margin %+0.3f m", state.supportArea, state.supportReliable ? "from contacts" : "not a polygon",
                         state.margin);
             ImGui::TextUnformatted("Load values above are contact counts, not forces.");
+        }
+        if (ImGui::CollapsingHeader("Standing Equilibrium", ImGuiTreeNodeFlags_DefaultOpen)) {
+            const float leftSole = 0.5f * (state.leftHeelClearance + state.leftForeClearance);
+            const float rightSole = 0.5f * (state.rightHeelClearance + state.rightForeClearance);
+            ImGui::Text("Right sole height %.1f mm    left sole height %.1f mm", rightSole * 1000.f, leftSole * 1000.f);
+            ImGui::Text("Sole normal error %.2f deg    coplanarity %.1f mm    heel-fore %.1f mm", degrees(state.soleNormalError),
+                        state.coplanarityM * 1000.f, state.heelForeGapM * 1000.f);
+            ImGui::Text("Heel clearance R %.1f L %.1f mm    forefoot R %.1f L %.1f mm", state.rightHeelClearance * 1000.f,
+                        state.leftHeelClearance * 1000.f, state.rightForeClearance * 1000.f, state.leftForeClearance * 1000.f);
+            ImGui::TextUnformatted("Left/right and heel/forefoot load fractions: unavailable");
+            ImGui::TextUnformatted("Jolt 5.3 does not report solved contact impulses to the listener.");
+            ImGui::Text("COM projection  %.3f  %.3f", state.comProjection.x, state.comProjection.z);
+            if (state.copAvailable) {
+                ImGui::Text("COP (measured)  %.3f  %.3f", state.cop.x, state.cop.z);
+            } else {
+                ImGui::TextUnformatted("COP: unavailable. The geometric support center is not a load measurement.");
+            }
+            ImGui::Text("Support center (geometric)  %.3f  %.3f", state.supportCenter.x, state.supportCenter.z);
+            if (state.equilibriumValid) {
+                ImGui::Text("Equilibrium target (kinematic, over the ankles)  %.3f  %.3f", state.equilibriumTarget.x, state.equilibriumTarget.z);
+                ImGui::Text("COM to equilibrium  %.1f mm    support margin %+.1f mm", state.comToEquilibrium * 1000.f, state.margin * 1000.f);
+            }
+            ImGui::Text("Estimated pitch moment %.1f N·m (equal load, forward arm)", state.estimatedAnkleMoment);
+            ImGui::Text("Ankle motor effort %.1f N·m    hip %.1f N·m    saturated joints %d", state.ankleEffort, state.hipEffort,
+                        state.saturatedMotors);
+            ImGui::Text("Stood %.2f s    %s", state.stoodSeconds, state.instability.c_str());
+            ImGui::TextUnformatted("Calculated: sole heights, equilibrium target, pitch-moment estimate.");
+            ImGui::TextUnformatted("Not measured: center of pressure and foot load fractions.");
+            if (ImGui::Button(recordTrial ? "Stop CSV" : "Record CSV")) {
+                recordTrial = !recordTrial;
+                if (recordTrial) {
+                    trialRows.clear();
+                    trialRows.push_back(
+                        "t,com_x,com_y,com_z,com_vx,com_vz,tilt,eq_x,eq_z,com_to_eq,coplanar,pitch_moment,ankle,hip,saturated,margin,phase,cop");
+                }
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Save CSV")) {
+                std::ofstream out("standing_trial.csv");
+                for (const auto& row : trialRows) {
+                    out << row << '\n';
+                }
+                poseMessage = "Wrote standing_trial.csv (" + std::to_string(trialRows.size()) + " rows).";
+            }
+            ImGui::Checkbox("Sole planes", &view.showSolePlane);
+            ImGui::SameLine();
+            ImGui::Checkbox("Equilibrium target", &view.showEquilibrium);
+            ImGui::Checkbox("COP marker", &view.showCop);
+            ImGui::SameLine();
+            ImGui::Checkbox("Ankle torque", &view.showAnkleTorque);
             ImGui::Checkbox("Foot collider", &view.showFootCollider);
             ImGui::SameLine();
             ImGui::Checkbox("Sole frame", &view.showSoleFrame);
@@ -1628,7 +1726,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.1 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.3.2 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

@@ -26,7 +26,7 @@ float tiltFromUp(Vec3 up) {
 
 }  // namespace
 
-BalanceState BalanceEstimator::measure(const PhysicsWorld& world, const Ragdoll& ragdoll) const {
+BalanceState BalanceEstimator::measure(const PhysicsWorld& world, const Ragdoll& ragdoll, float equilibriumLeadM) const {
     BalanceState state;
     Vec3 weighted{};
     Vec3 weightedVelocity{};
@@ -107,7 +107,72 @@ BalanceState BalanceEstimator::measure(const PhysicsWorld& world, const Ragdoll&
     state.contacts = support.contacts;
     state.hull = support.hull;
     state.supportCenter = support.center;
+    state.contactImpulseAvailable = false;
+    state.copAvailable = false;
+    state.leftLoadFraction = -1.f;
+    state.rightLoadFraction = -1.f;
+    state.heelLoadFraction = -1.f;
+    state.foreLoadFraction = -1.f;
+    const int groundedFeet = (state.leftGrounded ? 1 : 0) + (state.rightGrounded ? 1 : 0);
+    const float weight = state.totalMass * std::max(length(world.gravity()), 1.f);
+    Vec3 equilibrium{};
+    int equilibriumCount = 0;
+    float moment = 0.f;
+    for (const auto& joint : ragdoll.joints) {
+        if (joint.id != "ankle_1" && joint.id != "ankle_2") {
+            continue;
+        }
+        if (joint.child < 0 || joint.child >= int(ragdoll.bodies.size())) {
+            continue;
+        }
+        const bool grounded = joint.id == "ankle_1" ? state.rightGrounded : state.leftGrounded;
+        if (groundedFeet > 0 && !grounded) {
+            continue;
+        }
+        const RagdollBody& foot = ragdoll.bodies[joint.child];
+        const BodyState sample = world.bodyState(foot.physics);
+        const JointState ankle = world.jointState(joint.physics);
+        if (!sample.valid || !ankle.valid) {
+            continue;
+        }
+        const Vec3 heel = sample.position + rotate(sample.rotation, foot.heelLocal);
+        const Vec3 fore = sample.position + rotate(sample.rotation, foot.forefootLocal);
+        equilibrium = equilibrium + feasibleSolePoint(ankle.anchorChildWorld, heel, fore, equilibriumLeadM);
+        ++equilibriumCount;
+        const Vec3 offset{state.com.x - ankle.anchorChildWorld.x, 0.f, state.com.z - ankle.anchorChildWorld.z};
+        const float forwardArm = std::fabs(dot(offset, state.facing));
+        // Two feet share a lateral offset as a force difference. The pitch
+        // moment about each ankle is the forward arm times that foot's load.
+        // A single supporting foot has to resist the whole horizontal offset.
+        const float share = groundedFeet <= 1 ? 1.f : 0.5f;
+        const float arm = groundedFeet <= 1 ? length(offset) : forwardArm;
+        moment = std::max(moment, weight * share * arm);
+    }
+    if (equilibriumCount > 0) {
+        state.equilibriumTarget = equilibrium * (1.f / float(equilibriumCount));
+        state.equilibriumValid = true;
+        state.estimatedAnkleMoment = moment;
+        state.comToEquilibrium = length(Vec3{state.com.x - state.equilibriumTarget.x, 0.f, state.com.z - state.equilibriumTarget.z});
+    }
+    const float leftMean = 0.5f * (state.leftHeelClearance + state.leftForeClearance);
+    const float rightMean = 0.5f * (state.rightHeelClearance + state.rightForeClearance);
+    state.coplanarityM = std::fabs(leftMean - rightMean);
+    state.heelForeGapM = std::max(std::fabs(state.leftHeelClearance - state.leftForeClearance),
+                                  std::fabs(state.rightHeelClearance - state.rightForeClearance));
+    state.soleNormalError = std::sqrt(state.leftSolePitch * state.leftSolePitch + state.leftSoleRoll * state.leftSoleRoll);
+    state.soleNormalError = std::max(state.soleNormalError, std::sqrt(state.rightSolePitch * state.rightSolePitch + state.rightSoleRoll * state.rightSoleRoll));
     state.margin = supportMargin(support.hull, state.comProjection);
+    if (!state.finite) {
+        state.instability = "non-finite state";
+    } else if (state.coplanarityM > 0.003f) {
+        state.instability = "feet are not coplanar";
+    } else if (state.estimatedAnkleMoment > 12.f) {
+        state.instability = "estimated ankle moment exceeds 12 N·m";
+    } else if (state.supportReliable && state.margin < 0.f) {
+        state.instability = "COM is outside the support polygon";
+    } else {
+        state.instability = "within the estimated ankle capacity";
+    }
     const float gravity = std::max(length(world.gravity()), 1.f);
     const float height = std::max(state.com.y, 0.05f);
     const float horizon = std::sqrt(height / gravity);

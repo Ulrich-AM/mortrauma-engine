@@ -15,6 +15,11 @@ struct StandingPlacement {
     std::string error;
     float maxSeparation = 0.f;
     float footHeight = 0.f;
+    float coplanarityM = 0.f;
+    float heelForeGapM = 0.f;
+    float soleNormalError = 0.f;
+    float comToAnkleM = 0.f;
+    Vec3 equilibriumTarget{};
     Vec3 pelvisUp{0.f, 1.f, 0.f};
     std::vector<MotorTaskCommand> reference;
 };

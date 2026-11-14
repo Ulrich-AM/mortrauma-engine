@@ -160,6 +160,38 @@ float distanceOutsideSupport(const std::vector<Vec3>& hull, Vec3 groundPoint) {
     return margin >= 0.f ? 0.f : -margin;
 }
 
+CenterOfPressure centerOfPressure(const std::vector<ContactImpulse>& contacts) {
+    CenterOfPressure result;
+    Vec3 weighted{};
+    float sum = 0.f;
+    for (const ContactImpulse& contact : contacts) {
+        if (!(contact.normalImpulse > 0.f) || !finite(contact.point)) {
+            continue;
+        }
+        weighted = weighted + contact.point * contact.normalImpulse;
+        sum += contact.normalImpulse;
+    }
+    if (!(sum > 0.f) || !finite(weighted)) {
+        return result;
+    }
+    result.valid = true;
+    result.totalNormalImpulse = sum;
+    result.point = weighted * (1.f / sum);
+    return result;
+}
+
+Vec3 feasibleSolePoint(Vec3 ankleWorld, Vec3 heelWorld, Vec3 foreWorld, float leadM) {
+    Vec3 axis{foreWorld.x - heelWorld.x, 0.f, foreWorld.z - heelWorld.z};
+    const float lengthAxis = length(axis);
+    const Vec3 direction = lengthAxis > 1e-4f ? axis * (1.f / lengthAxis) : Vec3{0.f, 0.f, -1.f};
+    const Vec3 heel{heelWorld.x, 0.f, heelWorld.z};
+    const Vec3 ankle{ankleWorld.x, 0.f, ankleWorld.z};
+    const float along = dot(ankle - heel, direction) + leadM;
+    const float clamped = clampf(along, 0.004f, std::max(lengthAxis - 0.004f, 0.004f));
+    const Vec3 lateral = (ankle + direction * leadM) - (heel + direction * (dot(ankle - heel, direction) + leadM));
+    return heel + direction * clamped + lateral;
+}
+
 SupportEstimate estimateSupport(const PhysicsWorld& world, const Ragdoll& ragdoll) {
     SupportEstimate estimate;
     const RagdollBody* rightFoot = ragdoll.find("foot_1");

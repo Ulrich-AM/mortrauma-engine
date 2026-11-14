@@ -49,6 +49,12 @@ struct BalanceState {
     Vec3 comVelocity{};
     Vec3 comProjection{};
     Vec3 supportCenter{};
+    // Kinematic quiet-stand point: average of the feasible sole points.
+    // This is not a measured center of pressure.
+    Vec3 equilibriumTarget{};
+    bool equilibriumValid = false;
+    // Point the feedback law is currently tracking.
+    Vec3 balanceReference{};
     Vec3 facing{0.f, 0.f, -1.f};
     Vec3 right{1.f, 0.f, 0.f};
     float totalMass = 0.f;
@@ -82,6 +88,28 @@ struct BalanceState {
     float leftForeClearance = 0.f;
     float rightHeelClearance = 0.f;
     float rightForeClearance = 0.f;
+    // Left-to-right difference of the mean sole height, metres.
+    float coplanarityM = 0.f;
+    // Largest heel-to-forefoot height difference, metres.
+    float heelForeGapM = 0.f;
+    // Largest angle between a sole normal and world up, radians.
+    float soleNormalError = 0.f;
+    // Horizontal distance from the projected COM to the equilibrium target.
+    float comToEquilibrium = 0.f;
+    // Solved contact impulses are not available from this Jolt pin.
+    bool contactImpulseAvailable = false;
+    bool copAvailable = false;
+    Vec3 cop{};
+    // Negative means the fraction was not measured. Contact counts are not loads.
+    float leftLoadFraction = -1.f;
+    float rightLoadFraction = -1.f;
+    float heelLoadFraction = -1.f;
+    float foreLoadFraction = -1.f;
+    // Quasi-static estimate: supported weight times the horizontal distance
+    // from the ankle to the projected COM. Not a measured joint torque.
+    float estimatedAnkleMoment = 0.f;
+    float stoodSeconds = 0.f;
+    std::string instability = "not evaluated";
     float torsoTilt = 0.f;
     Vec3 torsoUp{0.f, 1.f, 0.f};
     Vec3 torsoAngularVelocity{};

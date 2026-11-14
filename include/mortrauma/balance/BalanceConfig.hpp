@@ -41,6 +41,15 @@ struct BalanceConfig {
     float maxTargetRate = 2.4f;
     // Balance task frequency. Torque is still the active-profile limit.
     float motorFrequencyHz = 12.f;
+    // Tried in M3.2. A knee-only correction does not close the unloaded
+    // left/right sole gap, and re-leveling the ankles afterwards makes the
+    // stance fall. Left false so the zero-moment pose is not disturbed.
+    bool coplanarFeet = false;
+    // Place and track the COM over the ankles instead of the contact centroid
+    // or the older 75% heel / 25% forefoot blend.
+    bool equilibriumReference = true;
+    // Metres ahead of the ankle, toward the toes. Zero is the zero-moment point.
+    float equilibriumLeadM = 0.f;
 };
 
 class BalanceConfigLoader {
