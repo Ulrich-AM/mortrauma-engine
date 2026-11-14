@@ -1,0 +1,13 @@
+build/
+out/
+cmake-build-*/
+.vs/
+.idea/
+*.user
+*.obj
+*.pdb
+*.ilk
+CMakeUserPresets.json
+mortrauma_layout.ini
+package/
+*.zip
