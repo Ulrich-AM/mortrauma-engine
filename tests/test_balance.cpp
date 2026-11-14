@@ -167,7 +167,6 @@ void testBal001() {
     Lab lab;
     expect(loadLab(lab, true), "BAL-001 laboratory loaded");
     expect(arm(lab), "BAL-001 standing placement is connected and unsupported by a fixture");
-    // Capsule feet have no sole, so quiet standing is an unstable equilibrium.
     // The initialization contract is the first second: feet down, mass up,
     // torso nearer upright than fallen. Longer holds are reported, not assumed.
     Trial trial;
@@ -181,11 +180,16 @@ void testBal001() {
     expect(trial.maxTilt < 0.45f, "BAL-001 torso stays upright for the first second");
     expect(trial.phase != mt::BalancePhase::Grounded && trial.phase != mt::BalancePhase::Falling,
            "BAL-001 does not give up during the first second");
-    Trial later;
-    integrate(lab, later, 180, true);
-    std::cout << "BAL-001 4s comY " << later.minComY << " tilt " << later.maxTilt << " phase " << mt::balancePhaseName(later.phase)
-              << '\n';
-    expect(later.finite, "BAL-001 later motion stays finite");
+    bool laterFinite = true;
+    for (int second = 2; second <= 10; ++second) {
+        Trial slice;
+        integrate(lab, slice, 120, true);
+        laterFinite = laterFinite && slice.finite;
+        const auto& state = lab.balance.state();
+        std::cout << "BAL-001 " << second << "s comY " << slice.minComY << " tilt " << slice.maxTilt << " margin " << state.margin
+                  << " phase " << mt::balancePhaseName(slice.phase) << '\n';
+    }
+    expect(laterFinite, "BAL-001 later motion stays finite");
 }
 
 void testBal002() {
@@ -431,6 +435,305 @@ void testBal014() {
     expect(!lab.motors.motorTaskActive(), "BAL-014 no balance task unless enabled");
 }
 
+void applyFootShape(Lab& lab, bool capsules) {
+    for (const char* footId : {"foot_1", "foot_2"}) {
+        const auto* foot = lab.ragdoll.find(footId);
+        mt::BodyCreateInfo info;
+        info.mass = foot->mass;
+        info.friction = 0.7f;
+        if (capsules) {
+            info.shape = mt::BodyCreateInfo::Shape::Capsule;
+            info.radius = std::max(foot->capsuleRadius, 0.04f);
+            const float length = mt::length(foot->segmentEnd - foot->segmentStart);
+            info.halfHeight = std::max(length * 0.5f - info.radius, 0.01f);
+        } else {
+            info.shape = mt::BodyCreateInfo::Shape::Box;
+            info.halfExtents = foot->boxHalfExtents;
+            info.shapeCenter = foot->shapeCenterLocal;
+            info.shapeRotation = foot->shapeRotationLocal;
+            info.convexRadius = 0.004f;
+        }
+        expect(lab.world.setBodyShape(foot->physics, info), std::string("shape swap ") + footId);
+    }
+}
+
+float soleUpY(Lab& lab, const char* id) {
+    const auto* foot = lab.ragdoll.find(id);
+    const auto sample = lab.world.bodyState(foot->physics);
+    return mt::normalize(mt::rotate(sample.rotation, foot->soleNormalLocal)).y;
+}
+
+void testFoot001() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-001 laboratory loaded");
+    for (const char* id : {"foot_1", "foot_2"}) {
+        const auto* foot = lab.ragdoll.find(id);
+        expect(foot != nullptr && foot->collider == mt::BodyCreateInfo::Shape::Box, std::string(id) + " uses a box");
+        expect(foot->boxHalfExtents.x > 0.05f && foot->boxHalfExtents.x < 0.12f, std::string(id) + " width");
+        expect(foot->boxHalfExtents.y > 0.12f && foot->boxHalfExtents.y < 0.22f, std::string(id) + " length");
+        expect(foot->boxHalfExtents.z > 0.04f && foot->boxHalfExtents.z < 0.14f, std::string(id) + " thickness");
+        expect(std::fabs(foot->mass - 1.3f) < 1e-3f, std::string(id) + " keeps the configured mass");
+        const auto view = lab.world.shapeView(foot->physics);
+        expect(view.shape == mt::BodyCreateInfo::Shape::Box, std::string(id) + " physics shape is a box");
+        expect(mt::length(view.centerOffset - foot->shapeCenterLocal) < 1e-4f, std::string(id) + " collider offset is stored");
+    }
+}
+
+void testFoot002() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-002 laboratory loaded");
+    expect(arm(lab), "FOOT-002 placed");
+    const float right = soleUpY(lab, "foot_1");
+    const float left = soleUpY(lab, "foot_2");
+    std::cout << "FOOT-002 sole up " << right << " " << left << '\n';
+    expect(right > 0.95f && left > 0.95f, "FOOT-002 soles are within 18 degrees of level");
+}
+
+void testFoot003() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-003 laboratory loaded");
+    expect(arm(lab), "FOOT-003 placed");
+    lab.balance.observe(lab.world, lab.ragdoll, lab.world.settings().fixedTimestep);
+    const auto& state = lab.balance.state();
+    std::cout << "FOOT-003 clearance R " << state.rightHeelClearance << " " << state.rightForeClearance << " L " << state.leftHeelClearance
+              << " " << state.leftForeClearance << '\n';
+    const float values[4] = {state.rightHeelClearance, state.rightForeClearance, state.leftHeelClearance, state.leftForeClearance};
+    for (float clearance : values) {
+        expect(clearance > -0.005f && clearance < 0.08f, "FOOT-003 heel and forefoot start near the floor");
+    }
+    expect(std::fabs(state.rightHeelClearance - state.rightForeClearance) < 0.04f, "FOOT-003 right sole is not pitched onto one edge");
+    expect(std::fabs(state.leftHeelClearance - state.leftForeClearance) < 0.04f, "FOOT-003 left sole is not pitched onto one edge");
+}
+
+void testFoot004() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-004 laboratory loaded");
+    expect(arm(lab), "FOOT-004 placed");
+    Trial trial;
+    integrate(lab, trial, 60, true);
+    for (const char* id : {"ankle_1", "ankle_2"}) {
+        const mt::RagdollJoint* joint = nullptr;
+        for (const auto& candidate : lab.ragdoll.joints) {
+            if (candidate.id == id) {
+                joint = &candidate;
+            }
+        }
+        expect(joint != nullptr, std::string(id) + " exists");
+        const auto sample = lab.world.jointState(joint->physics);
+        expect(sample.valid && sample.separation < 0.02f, std::string(id) + " stays connected");
+    }
+    expect(trial.finite, "FOOT-004 finite");
+}
+
+void testFoot005() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-005 laboratory loaded");
+    expect(arm(lab), "FOOT-005 placed");
+    float lowest = 0.f;
+    Trial trial;
+    integrate(lab, trial, 120, true);
+    for (const auto& contact : lab.balance.state().contacts) {
+        lowest = std::min(lowest, contact.point.y);
+    }
+    std::cout << "FOOT-005 lowest contact " << lowest << '\n';
+    expect(trial.finite, "FOOT-005 finite");
+    expect(lowest > -0.05f, "FOOT-005 feet do not sink through the floor");
+}
+
+void testFoot006() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-006 laboratory loaded");
+    expect(arm(lab), "FOOT-006 placed");
+    Trial trial;
+    integrate(lab, trial, 40, true);
+    int supporting = 0;
+    int classified = 0;
+    for (const auto& contact : lab.balance.state().contacts) {
+        if (!contact.supporting) {
+            continue;
+        }
+        ++supporting;
+        if (contact.region == mt::FootRegion::Heel || contact.region == mt::FootRegion::Midfoot || contact.region == mt::FootRegion::Forefoot) {
+            ++classified;
+        }
+    }
+    std::cout << "FOOT-006 supporting " << supporting << " classified " << classified << " heel " << lab.balance.state().rightHeel << " "
+              << lab.balance.state().leftHeel << " fore " << lab.balance.state().rightFore << " " << lab.balance.state().leftFore << '\n';
+    expect(supporting > 0, "FOOT-006 has a ground contact");
+    expect(classified == supporting, "FOOT-006 every supporting contact is heel, midfoot, or forefoot");
+}
+
+void testFoot007() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-007 laboratory loaded");
+    expect(arm(lab), "FOOT-007 placed");
+    Trial trial;
+    integrate(lab, trial, 40, true);
+    const auto& state = lab.balance.state();
+    int matched = 0;
+    for (const auto& vertex : state.hull) {
+        for (const auto& contact : state.contacts) {
+            if (contact.supporting && mt::length(mt::Vec3{vertex.x - contact.point.x, 0.f, vertex.z - contact.point.z}) < 1e-3f) {
+                ++matched;
+                break;
+            }
+        }
+    }
+    std::cout << "FOOT-007 hull " << state.hull.size() << " area " << state.supportArea << " reliable " << state.supportReliable << '\n';
+    expect(matched == int(state.hull.size()), "FOOT-007 the hull comes from contact points");
+    if (state.hull.size() >= 3) {
+        expect(state.supportArea > 0.f && state.supportReliable, "FOOT-007 three contacts produce an area");
+    }
+}
+
+void testFoot008() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-008 laboratory loaded");
+    expect(arm(lab), "FOOT-008 placed");
+    Trial trial;
+    integrate(lab, trial, 30, true);
+    const auto& state = lab.balance.state();
+    const float offset = mt::length(mt::Vec3{state.comProjection.x - state.supportCenter.x, 0.f, state.comProjection.z - state.supportCenter.z});
+    std::cout << "FOOT-008 offset " << offset << " margin " << state.margin << '\n';
+    expect(trial.finite, "FOOT-008 finite");
+    expect(state.leftGrounded || state.rightGrounded, "FOOT-008 a foot is supporting");
+    expect(offset < 0.45f, "FOOT-008 the projected COM starts near the measured support");
+}
+
+void testFoot009() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-009 laboratory loaded");
+    expect(lab.world.shapeView(lab.ragdoll.find("foot_1")->physics).shape == mt::BodyCreateInfo::Shape::Box, "FOOT-009 starts on the box");
+    expect(arm(lab), "FOOT-009 box placement");
+    Trial box;
+    integrate(lab, box, 40, true);
+    const int boxPoints = lab.balance.state().leftPoints + lab.balance.state().rightPoints;
+    applyFootShape(lab, true);
+    expect(lab.world.shapeView(lab.ragdoll.find("foot_1")->physics).shape == mt::BodyCreateInfo::Shape::Capsule, "FOOT-009 capsule swap");
+    expect(arm(lab), "FOOT-009 capsule placement");
+    Trial capsule;
+    integrate(lab, capsule, 40, true);
+    const int capsulePoints = lab.balance.state().leftPoints + lab.balance.state().rightPoints;
+    applyFootShape(lab, false);
+    expect(lab.world.shapeView(lab.ragdoll.find("foot_1")->physics).shape == mt::BodyCreateInfo::Shape::Box, "FOOT-009 box restored");
+    std::cout << "FOOT-009 contacts box " << boxPoints << " capsule " << capsulePoints << '\n';
+    expect(box.finite && capsule.finite, "FOOT-009 both colliders stay finite");
+}
+
+void testFoot010() {
+    Lab lab;
+    expect(loadLab(lab, true), "FOOT-010 laboratory loaded");
+    for (const char* id : {"foot_1", "foot_2"}) {
+        const float friction = lab.world.bodyState(lab.ragdoll.find(id)->physics).friction;
+        std::cout << "FOOT-010 " << id << " friction " << friction << '\n';
+        expect(friction > 0.2f && friction < 1.2f, std::string(id) + " friction is not an artificial anchor");
+    }
+}
+
+void testBal015() {
+    Lab lab;
+    expect(loadLab(lab, true), "BAL-015 laboratory loaded");
+    expect(arm(lab), "BAL-015 placed");
+    float duration = 0.f;
+    const float dt = lab.world.settings().fixedTimestep;
+    bool finite = true;
+    for (int step = 0; step < 1200; ++step) {
+        Trial slice;
+        integrate(lab, slice, 1, true);
+        finite = finite && slice.finite;
+        const auto& state = lab.balance.state();
+        const bool upright = state.com.y > 0.75f && state.torsoTilt < 0.7f && state.phase != mt::BalancePhase::Grounded &&
+                             state.phase != mt::BalancePhase::Falling;
+        if (upright) {
+            duration = (step + 1) * dt;
+        } else {
+            break;
+        }
+    }
+    std::cout << "BAL-015 quiet stand " << duration << " s (10 s target, not claimed)\n";
+    expect(finite, "BAL-015 finite");
+    expect(duration >= 0.75f, "BAL-015 stands at least as long as the first-second contract");
+}
+
+void pushTrial(const char* name, mt::Vec3 direction) {
+    Lab lab;
+    expect(loadLab(lab, true), std::string(name) + " laboratory loaded");
+    expect(arm(lab), std::string(name) + " placed");
+    Trial settle;
+    integrate(lab, settle, 30, true);
+    const mt::Vec3 before = lab.balance.state().com;
+    const mt::Vec3 facing = lab.balance.state().facing;
+    impulse(lab, "chest", direction, 3.f);
+    Trial trial;
+    integrate(lab, trial, 90, true);
+    const mt::Vec3 delta = trial.com - before;
+    const float along = direction.z * mt::dot(delta, facing) + direction.x * mt::dot(delta, lab.balance.state().right);
+    std::cout << name << " along " << along << " comY " << trial.minComY << " tilt " << trial.maxTilt << " phase "
+              << mt::balancePhaseName(trial.phase) << " torque over " << trial.maxTorqueOver << '\n';
+    expect(trial.finite, std::string(name) + " finite");
+    expect(trial.maxTorqueOver < 2.f, std::string(name) + " stays inside torque limits");
+}
+
+void testBal016() { pushTrial("BAL-016", {0.f, 0.f, 1.f}); }
+void testBal017() { pushTrial("BAL-017", {0.f, 0.f, -1.f}); }
+void testBal018() {
+    pushTrial("BAL-018 right", {1.f, 0.f, 0.f});
+    pushTrial("BAL-018 left", {-1.f, 0.f, 0.f});
+}
+
+void testBal019() {
+    Lab lab;
+    expect(loadLab(lab, true), "BAL-019 laboratory loaded");
+    expect(arm(lab), "BAL-019 placed");
+    Trial trial;
+    integrate(lab, trial, 180, true);
+    std::cout << "BAL-019 torque over " << trial.maxTorqueOver << " ankle " << trial.maxAnkle << " hip " << trial.maxHip << '\n';
+    expect(trial.finite, "BAL-019 finite");
+    expect(trial.maxTorqueOver < 2.f, "BAL-019 motors respect configured torque limits");
+}
+
+void testBal020() {
+    Lab lab;
+    expect(loadLab(lab, true), "BAL-020 laboratory loaded");
+    expect(arm(lab), "BAL-020 placed");
+    Trial trial;
+    integrate(lab, trial, 3600, true);
+    const auto& state = lab.balance.state();
+    std::cout << "BAL-020 30s comY " << state.com.y << " tilt " << state.torsoTilt << " phase " << mt::balancePhaseName(state.phase) << '\n';
+    expect(trial.finite, "BAL-020 stays finite for 30 seconds");
+    expect(state.com.y > -1.f && state.com.y < 5.f, "BAL-020 does not leave the scene");
+}
+
+void runFootTest(const std::string& which) {
+    if (which == "FOOT-001") testFoot001();
+    else if (which == "FOOT-002") testFoot002();
+    else if (which == "FOOT-003") testFoot003();
+    else if (which == "FOOT-004") testFoot004();
+    else if (which == "FOOT-005") testFoot005();
+    else if (which == "FOOT-006") testFoot006();
+    else if (which == "FOOT-007") testFoot007();
+    else if (which == "FOOT-008") testFoot008();
+    else if (which == "FOOT-009") testFoot009();
+    else if (which == "FOOT-010") testFoot010();
+    else {
+        std::cerr << "unknown foot test " << which << '\n';
+        ++gFailures;
+    }
+}
+
+void runAllFootTests() {
+    testFoot001();
+    testFoot002();
+    testFoot003();
+    testFoot004();
+    testFoot005();
+    testFoot006();
+    testFoot007();
+    testFoot008();
+    testFoot009();
+    testFoot010();
+}
+
 void runBalanceTest(const std::string& which) {
     if (which == "BAL-001") testBal001();
     else if (which == "BAL-002") testBal002();
@@ -446,6 +749,12 @@ void runBalanceTest(const std::string& which) {
     else if (which == "BAL-012") testBal012();
     else if (which == "BAL-013") testBal013();
     else if (which == "BAL-014") testBal014();
+    else if (which == "BAL-015") testBal015();
+    else if (which == "BAL-016") testBal016();
+    else if (which == "BAL-017") testBal017();
+    else if (which == "BAL-018") testBal018();
+    else if (which == "BAL-019") testBal019();
+    else if (which == "BAL-020") testBal020();
     else {
         std::cerr << "unknown balance test " << which << '\n';
         ++gFailures;
@@ -467,4 +776,10 @@ void runAllBalanceTests() {
     testBal012();
     testBal013();
     testBal014();
+    testBal015();
+    testBal016();
+    testBal017();
+    testBal018();
+    testBal019();
+    testBal020();
 }

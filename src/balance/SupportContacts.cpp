@@ -88,6 +88,35 @@ std::vector<GroundPoint> convexHull(std::vector<GroundPoint> points) {
     return lower;
 }
 
+float polygonArea(const std::vector<GroundPoint>& hull) {
+    if (hull.size() < 3) {
+        return 0.f;
+    }
+    double area = 0.0;
+    for (size_t i = 0; i < hull.size(); ++i) {
+        const GroundPoint& a = hull[i];
+        const GroundPoint& b = hull[(i + 1) % hull.size()];
+        area += double(a.x) * b.z - double(b.x) * a.z;
+    }
+    return float(std::fabs(area) * 0.5);
+}
+
+FootRegion classifySole(const RagdollBody& foot, Vec3 localPoint) {
+    const Vec3 axis = foot.forefootLocal - foot.heelLocal;
+    const float span = dot(axis, axis);
+    if (!(span > 1e-8f)) {
+        return FootRegion::None;
+    }
+    const float u = dot(localPoint - foot.heelLocal, axis) / span;
+    if (u < 0.33f) {
+        return FootRegion::Heel;
+    }
+    if (u < 0.66f) {
+        return FootRegion::Midfoot;
+    }
+    return FootRegion::Forefoot;
+}
+
 float featureDistance(const std::vector<GroundPoint>& hull, float x, float z) {
     if (hull.empty()) {
         return 0.f;
@@ -139,10 +168,13 @@ SupportEstimate estimateSupport(const PhysicsWorld& world, const Ragdoll& ragdol
     for (const auto& body : ragdoll.bodies) {
         character.insert(body.physics);
     }
-    auto accumulate = [&](const RagdollBody* foot, bool& grounded, bool& touching, int& points, float& load, bool right) {
+    auto accumulate = [&](const RagdollBody* foot, bool& grounded, bool& touching, int& points, float& load, int& heel, int& mid,
+                          int& fore, float& area) {
         if (foot == nullptr) {
             return;
         }
+        const BodyState footState = world.bodyState(foot->physics);
+        std::vector<GroundPoint> footRaw;
         int supportCount = 0;
         for (const auto& contact : world.contacts()) {
             const bool onFoot = contact.bodyA == foot->physics || contact.bodyB == foot->physics;
@@ -163,22 +195,35 @@ SupportEstimate estimateSupport(const PhysicsWorld& world, const Ragdoll& ragdol
             BalanceContact draw;
             draw.point = contact.point;
             draw.normal = normal;
-            draw.supporting = normal.y >= kSupportNormalY;
+            draw.supporting = normal.y >= kSupportNormalY && footState.valid;
             if (!draw.supporting) {
                 estimate.contacts.push_back(draw);
                 continue;
             }
+            const Vec3 local = rotate(conjugate(footState.rotation), contact.point - footState.position);
+            draw.region = classifySole(*foot, local);
+            if (draw.region == FootRegion::Heel) {
+                ++heel;
+            } else if (draw.region == FootRegion::Midfoot) {
+                ++mid;
+            } else if (draw.region == FootRegion::Forefoot) {
+                ++fore;
+            }
             grounded = true;
             ++supportCount;
-            estimate.supportPoints.push_back({contact.point.x, 0.f, contact.point.z});
+            const Vec3 flat{contact.point.x, 0.f, contact.point.z};
+            estimate.supportPoints.push_back(flat);
+            footRaw.push_back({flat.x, flat.z, flat});
             estimate.contacts.push_back(draw);
-            (void)right;
         }
         points = supportCount;
         load = float(supportCount);
+        area = polygonArea(convexHull(footRaw));
     };
-    accumulate(rightFoot, estimate.rightGrounded, estimate.rightTouching, estimate.rightPoints, estimate.rightLoadProxy, true);
-    accumulate(leftFoot, estimate.leftGrounded, estimate.leftTouching, estimate.leftPoints, estimate.leftLoadProxy, false);
+    accumulate(rightFoot, estimate.rightGrounded, estimate.rightTouching, estimate.rightPoints, estimate.rightLoadProxy, estimate.rightHeel,
+               estimate.rightMid, estimate.rightFore, estimate.rightArea);
+    accumulate(leftFoot, estimate.leftGrounded, estimate.leftTouching, estimate.leftPoints, estimate.leftLoadProxy, estimate.leftHeel,
+               estimate.leftMid, estimate.leftFore, estimate.leftArea);
 
     std::vector<GroundPoint> raw;
     for (const Vec3& point : estimate.supportPoints) {
@@ -195,6 +240,8 @@ SupportEstimate estimateSupport(const PhysicsWorld& world, const Ragdoll& ragdol
     }
     estimate.center = center;
     estimate.margin = 0.f;
+    estimate.area = polygonArea(hull);
+    estimate.reliable = hull.size() >= 3 && estimate.area > 1e-4f;
     return estimate;
 }
 

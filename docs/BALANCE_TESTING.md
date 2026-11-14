@@ -34,6 +34,12 @@ t = 4.0 s   com height min 0.127 m   torso tilt max 1.84 rad    phase Grounded
 
 The first second is the BAL-001 pass. The later fall is the limitation in `docs/BALANCE_SYSTEM.md`. Do not tighten or loosen the first-second numbers to hide a change in that hold. If a future change drops the first second below 0.75 m or past 0.45 rad, BAL-001 should fail.
 
+## v0.3.1 foot and duration cases
+
+`FOOT-001` through `FOOT-010` and `BAL-015` through `BAL-020` are in the same executable. The numbers from the flat-sole build are in `docs/FOOT_CONTACT_TESTING.md` and `docs/BALANCE_STABILITY_COMPARISON.md`.
+
+BAL-001 still requires the first second upright. On the flat-sole Normal preset that second measured a minimum center-of-mass height of 1.012 m and a maximum torso tilt of 0.247 rad, with the feet down on 119 of 120 steps. BAL-015 then measured a quiet stand of 1.39 s. The 10 s and 30 s targets were not met. The 30 s run stays finite and ends on the ground.
+
 ## Grab
 
 GRAB-001 repeats begin and release. GRAB-002 resets during a grab. GRAB-003 grabs with motors active. GRAB-004 grabs with the pelvis fixture. GRAB-005 moves the target quickly. GRAB-006 checks the temporary constraint is gone. GRAB-007 grabs while balance is active. The lock bug they cover is in `docs/GRAB_CRASH_INVESTIGATION.md`.
