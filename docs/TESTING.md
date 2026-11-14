@@ -57,6 +57,10 @@ These items need a person at the window. An automated screenshot of the paused b
 | Loose / Natural / Firm and save JSON | Preset files load through the same function the tests use. The save button was not clicked by hand. |
 | Platform and ramp toggles | Not clicked by hand. They create and destroy static boxes through the physics adapter. |
 
+## v0.4.1 stepping
+
+STEP-001 checks that a rightward shift commands positive hip 1 swing1 and a leftward shift commands the opposite sign. STEP-002 and STEP-003 require the center of mass to move at least 8 mm toward the selected foot while the center of mass stays above 0.90 m. STEP-004 checks that the support-foot choice puts the target on that side. STEP-005 and STEP-006 stay in the single-leg path and do not start a lift; the support text is a contact estimate, and the load fraction stays negative. STEP-007 checks a planned sole target a few centimetres up and that the foot is not teleported. STEP-008 and STEP-009 keep joint angles and motor torque inside the existing limits. STEP-010 compares the controller's upright clearance with the sole rise sampled only while the torso is still up. STEP-011 requires a real contact if the foot is lowered, or a foot that never left the ground if the lift was refused. STEP-012 and STEP-013 finish in Completed or Aborted and clear the balance offset. STEP-014 cancels back to Idle while the balance controller still owns the motor task. STEP-015 is a 30 s quiet stand with no step command. STEP-016 is a 55 N·s push that falls. STEP-017 grabs and pushes the chest. STEP-018 refuses a kinematic support during a sequence.
+
 ## Windows
 
 `.github/workflows/windows-release.yml` builds on `windows-latest` with the installed MSVC toolset (the image no longer exposes the Visual Studio 2022 CMake generator) and Ninja.
