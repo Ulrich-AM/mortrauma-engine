@@ -2,8 +2,8 @@
 
 #include "mortrauma/core/Log.hpp"
 
-#include <GL/gl.h>
-
+// GLFW includes the platform headers before GL/gl.h. Including GL/gl.h first
+// leaves WINGDIAPI undefined in the Windows SDK.
 #include <GLFW/glfw3.h>
 
 #include <cmath>
