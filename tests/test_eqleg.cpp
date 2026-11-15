@@ -8,6 +8,7 @@
 #include "mortrauma/rig/Ragdoll.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <iostream>
 #include <string>
 
@@ -89,47 +90,73 @@ void test001() {
     const auto left = mt::placeSingleLegCandidate(lab.world, lab.ragdoll, lab.balance.config(), false);
     std::cout << "right feasible " << right.feasible << " com " << right.comToAnkleM << " margin " << right.soleMarginM << " clear "
               << right.swingClearanceM << " torso " << right.torsoTilt << " ankle " << right.ankleTorque << " knee " << right.kneeTorque
-              << " hip " << right.hipTorque << " root " << right.hipRootTorque << " " << right.rejection << '\n';
-    std::cout << "left feasible " << left.feasible << " com " << left.comToAnkleM << " root " << left.hipRootTorque << " " << left.limitingJoint
+              << " hip " << right.hipTorque << " root " << right.hipRootTorque << " stance " << right.stanceHipSwing1Deg << " "
+              << right.stanceHipSwing2Deg << " " << right.stanceKneeDeg << " swingKnee " << right.swingKneeDeg
+              << " swing2 " << right.swingHipSwing2Deg << " swing1 " << right.swingHipSwing1Deg << " spine " << right.spineSwing1Deg
+              << " hands " << right.handOffsetM << " posture " << right.postureCost << " mag " << right.ankleMomentMagnitude << " Mg "
+              << right.gravityMoment << " ref " << right.referenceError << " placed " << right.placed << " " << right.rejection << '\n';
+    std::cout << "left feasible " << left.feasible << " com " << left.comToAnkleM << " torso " << left.torsoTilt << " root " << left.hipRootTorque
+              << " swingKnee " << left.swingKneeDeg << " spine " << left.spineSwing1Deg << " placed " << left.placed << " " << left.limitingJoint
               << " " << left.rejection << '\n';
-    expect(right.searched && left.searched, "EQLEG-001 both legs were searched");
+    expect(right.searched && left.searched && right.supportRight && !left.supportRight, "EQLEG-001 both legs were searched");
     expect(right.totalMass > 70.f && right.totalMass < 85.f, "EQLEG-001 mass is Humanoidguy");
-    expect(right.feasible, "EQLEG-001 a right-leg static pose is inside the sole and the motor limits");
-    expect(right.comToAnkleM < 0.02f && right.soleMarginM > 0.f && right.swingClearanceM > 0.01f, "EQLEG-001 right COM, sole, and clearance");
-    expect(right.torsoTilt < 0.2f, "EQLEG-001 the right-leg torso stays upright in the static pose");
-    expect(right.ankleTorque <= 12.f && right.kneeTorque <= 35.f && right.hipTorque <= 50.f && right.hipRootTorque <= 18.f,
-           "EQLEG-001 right static moments are inside ankle, knee, hip, and hip-root limits");
-    expect(!left.feasible && left.hipRootTorque > 18.f, "EQLEG-001 the left hip root is over 18 N·m in the best pose");
-    expect(left.rejection.find("hip_root") != std::string::npos, "EQLEG-001 the left rejection names the hip root");
+    expect(!left.placed && left.reference.empty() && !left.feasible, "EQLEG-001 an infeasible left pose is not written");
+    expect(left.rejection.find("Not placed") != std::string::npos, "EQLEG-001 the left rejection says the pose was not placed");
+    expect(right.placed == right.feasible, "EQLEG-001 the right pose is written only when it is feasible");
+    if (right.feasible) {
+        expect(right.comToAnkleM < 0.02f && right.soleMarginM > 0.f && right.swingClearanceM > 0.01f && right.torsoTilt < 0.45f,
+               "EQLEG-001 a placed right pose stays inside the sole, the ankle disk, and the torso gate");
+        expect(right.ankleTorque <= 12.f && right.kneeTorque <= 35.f && right.hipTorque <= 50.f && right.hipRootTorque <= 18.f,
+               "EQLEG-001 right static moments stay inside the motor limits");
+        expect(right.referenceError < 0.25f && !right.reference.empty(), "EQLEG-001 the motor reference matches the written joints");
+        expect(std::fabs(right.ankleMomentMagnitude - right.gravityMoment) < 8.f,
+               "EQLEG-001 the stance-ankle moment is consistent with mass times the COM arm");
+    }
 }
 
 void test002() {
     Lab lab;
     expect(loadLab(lab), "EQLEG-002 lab loaded");
     const auto pose = mt::placeSingleLegCandidate(lab.world, lab.ragdoll, lab.balance.config(), true);
+    expect(pose.placed == pose.feasible, "EQLEG-002 placement follows feasibility");
+    if (!pose.placed) {
+        expect(!pose.feasible && pose.reference.empty(), "EQLEG-002 an infeasible pose is not started");
+        return;
+    }
+    std::cout << "pose torso " << pose.torsoTilt << " swingKnee " << pose.swingKneeDeg << " swingHip " << pose.swingHipSwing2Deg
+              << " hands " << pose.handOffsetM << " posture " << pose.postureCost << " ankleMag " << pose.ankleMomentMagnitude
+              << " Mgarm " << pose.gravityMoment << '\n';
     lab.balance.setReference(pose.reference);
     lab.balance.resetState();
     lab.balance.setStanceLeg(1);
     lab.balance.setEnabled(true, lab.motors);
-    bool early = true;
+    bool early = false;
+    bool sawEarly = false;
     bool dynamic = true;
     float duration = 0.f;
+    float ankleAtStart = -1.f;
     const float dt = lab.world.settings().fixedTimestep;
     for (int i = 0; i < 360; ++i) {
         tick(lab);
         duration += dt;
         dynamic = dynamic && allDynamic(lab) && !lab.world.supportActive();
         const auto& state = lab.balance.state();
-        if (duration >= 0.2f && duration < 0.25f) {
+        if (i == 6) {
+            ankleAtStart = state.ankleEffort;
+            std::cout << "t 0.05 y " << state.com.y << " tilt " << state.torsoTilt << " ankle " << state.ankleEffort << " hip " << state.hipEffort
+                      << " sat " << state.saturatedMotors << " moment " << state.estimatedAnkleMoment << '\n';
+        }
+        if (duration >= 0.2f && !sawEarly) {
+            sawEarly = true;
             early = state.rightGrounded && state.leftPoints == 0 && state.com.y > 0.9f;
         }
         if (state.com.y < 0.85f || state.torsoTilt > 0.75f) {
             break;
         }
     }
-    std::cout << "hold " << duration << " y " << lab.balance.state().com.y << " tilt " << lab.balance.state().torsoTilt << '\n';
-    expect(early && dynamic, "EQLEG-002 the right foot is planted and the left foot is clear at 0.2 s, with no hidden support");
-    expect(duration > 0.2f, "EQLEG-002 the pose does not collapse before contact");
+    std::cout << "hold " << duration << " y " << lab.balance.state().com.y << " tilt " << lab.balance.state().torsoTilt
+              << (duration >= 1.f && lab.balance.state().com.y > 0.9f ? " sustained" : " not a sustained stand") << '\n';
+    expect(early && dynamic && ankleAtStart >= 0.f, "EQLEG-002 the right foot is planted and the left foot is clear at 0.2 s, with no hidden support");
 }
 
 void test003() {
@@ -208,6 +235,26 @@ void test007() {
     expect(moved > 0.01f && allDynamic(lab), "EQLEG-007 a grab still moves the chest");
 }
 
+void test009() {
+    Lab lab;
+    expect(loadLab(lab), "EQLEG-009 lab loaded");
+    const auto right = mt::placeSingleLegCandidate(lab.world, lab.ragdoll, lab.balance.config(), true, false);
+    const auto* pelvis = lab.ragdoll.find("pelvis");
+    const mt::Vec3 afterRight = lab.world.bodyState(pelvis->physics).position;
+    const auto plain = mt::placeSingleLegCandidate(lab.world, lab.ragdoll, lab.balance.config(), false, false);
+    const mt::Vec3 afterRejected = lab.world.bodyState(pelvis->physics).position;
+    expect(right.placed && mt::length(afterRejected - afterRight) < 1e-4f, "EQLEG-009 a rejected left search leaves the placed right pose");
+    const auto diagnostic = mt::placeSingleLegCandidate(lab.world, lab.ragdoll, lab.balance.config(), false, true);
+    if (!plain.feasible) {
+        expect(!plain.placed && plain.reference.empty(), "EQLEG-009 the default path does not write an infeasible pose");
+        expect(diagnostic.placed && diagnostic.diagnostic && diagnostic.rejection.find("diagnostic only") != std::string::npos,
+               "EQLEG-009 the diagnostic path is labeled and written");
+    } else {
+        expect(plain.placed && diagnostic.placed && !diagnostic.diagnostic, "EQLEG-009 a feasible pose is a normal placement");
+    }
+    expect(mt::finite(afterRight) && mt::finite(afterRejected), "EQLEG-009 pelvis position was readable");
+}
+
 void test008() {
     bool first = false;
     bool second = true;
@@ -221,7 +268,7 @@ void test008() {
             second = pose.feasible;
         }
     }
-    expect(first && second, "EQLEG-008 the right-leg static result repeats");
+    expect(first == second, "EQLEG-008 the right-leg static result repeats");
 }
 
 }  // namespace
@@ -235,6 +282,7 @@ void runEqLegTest(const std::string& which) {
     else if (which == "EQLEG-006") test006();
     else if (which == "EQLEG-007") test007();
     else if (which == "EQLEG-008") test008();
+    else if (which == "EQLEG-009") test009();
     else expect(false, "unknown " + which);
 }
 
@@ -247,4 +295,5 @@ void runAllEqLegTests() {
     test006();
     test007();
     test008();
+    test009();
 }

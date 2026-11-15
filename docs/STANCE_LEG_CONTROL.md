@@ -10,6 +10,6 @@ Forward hip swing2 keeps the shared sign on the stance hip. The ankles are still
 
 The selection is cleared by Reset to Standing and by Abort Experiment. It is not a welded foot, a kinematic body, or a support fixture.
 
-This mode does not make the right-leg pose stable. The hold is about 0.6 s either with it or without it. It is kept so the swing hip is not driven by the two-foot law while that foot is supposed to stay up.
+This mode does not make the right-leg pose stable. After the v0.4.4 pose ranking the hold is about 0.63 s. It is kept so the swing hip is not driven by the two-foot law while that foot is supposed to stay up. The left candidate is not placed, so this mode is not entered for that side unless the diagnostic checkbox is on. That checkbox is labeled diagnostic only and is not a standing pose.
 
 The support polygon used once a foot leaves the ground is the contact hull of the feet that are still touching. A contact count is not a force. The center of pressure remains unavailable. The static margin in the feasibility report is the geometric sole, computed before the simulation, and it is labeled as a moment balance rather than a measured load.

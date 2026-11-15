@@ -22,6 +22,8 @@ v0.4.2 (M4.2) starts an unloading flexion while the swing foot is still touching
 
 v0.4.3 (M4.3) separates a whole-body moment from the torque at each joint. A right-leg pose is statically inside the current limits. The simulated hold lasts about 0.6 s. The left leg is blocked by the 18 N·m hip root. There is no dynamic step. See `docs/M4_3_EXPERIMENTS.md`.
 
+v0.4.4 (M4.4) ranks feasible single-leg poses by posture and refuses to place a pose that fails a torque, joint, or support check. The left pose is no longer written. The right pose is still not held. See `docs/M4_4_EXPERIMENTS.md`.
+
 ## M4 — Momentum and recovery stepping
 
 Detect a loss of balance and take a step. The existing hip and knee limits are the range the step has to respect. Foot bodies are the contactors.
