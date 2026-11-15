@@ -83,6 +83,7 @@ struct App {
     bool drivePoseJointsOnly = true;
     std::string poseMessage;
     std::string singleLegNote = "Single-leg equilibrium has not been placed.";
+    bool placeRejectedPose = false;
     struct MotorTrace {
         std::vector<float> targetDeg;
         std::vector<float> measuredDeg;
@@ -391,9 +392,19 @@ struct App {
         world.endSupport();
         poseController.cancel();
         stepping.cancel();
-        const SingleLegCandidate candidate = placeSingleLegCandidate(world, ragdoll, balance.config(), supportRight);
-        if (candidate.reference.empty()) {
-            singleLegNote = candidate.rejection.empty() ? "The single-leg search did not produce a pose." : candidate.rejection;
+        balance.setStanceLeg(0);
+        const SingleLegCandidate candidate = placeSingleLegCandidate(world, ragdoll, balance.config(), supportRight, placeRejectedPose);
+        singleLegNote = std::string(supportRight ? "Right" : "Left") + " support. " + candidate.rejection + " Torso " +
+                        std::to_string(candidate.torsoTilt) + " rad, swing knee " + std::to_string(candidate.swingKneeDeg) +
+                        " deg, swing hip " + std::to_string(candidate.swingHipSwing2Deg) + " deg, hands " +
+                        std::to_string(candidate.handOffsetM) + " m, posture " + std::to_string(candidate.postureCost) +
+                        ". COM to ankle " + std::to_string(candidate.comToAnkleM) + " m. Static ankle " +
+                        std::to_string(candidate.ankleTorque) + " (vector " + std::to_string(candidate.ankleMomentMagnitude) +
+                        ", Mg*arm " + std::to_string(candidate.gravityMoment) + ") knee " + std::to_string(candidate.kneeTorque) +
+                        " hip " + std::to_string(candidate.hipTorque) + " hip root " + std::to_string(candidate.hipRootTorque) +
+                        " N·m. " + candidate.limitingJoint + " " + std::to_string(candidate.limitingTorque) + "/" +
+                        std::to_string(candidate.limitingLimit) + ".";
+        if (!candidate.placed || candidate.reference.empty()) {
             poseMessage = singleLegNote;
             return;
         }
@@ -403,13 +414,6 @@ struct App {
         balance.setEnabled(true, motors);
         accumulator = 0.f;
         playing = true;
-        singleLegNote = std::string(supportRight ? "Right" : "Left") + " support. " + candidate.rejection + " COM to ankle " +
-                        std::to_string(candidate.comToAnkleM) + " m, sole margin " + std::to_string(candidate.soleMarginM) +
-                        " m, swing clearance " + std::to_string(candidate.swingClearanceM) + " m, torso " +
-                        std::to_string(candidate.torsoTilt) + " rad. Static ankle " + std::to_string(candidate.ankleTorque) +
-                        " knee " + std::to_string(candidate.kneeTorque) + " hip " + std::to_string(candidate.hipTorque) +
-                        " hip root " + std::to_string(candidate.hipRootTorque) + " N·m. Limit " + candidate.limitingJoint + " " +
-                        std::to_string(candidate.limitingTorque) + "/" + std::to_string(candidate.limitingLimit) + ".";
         poseMessage = singleLegNote;
     }
 
@@ -1120,6 +1124,10 @@ struct App {
                 placeSingleLeg(false);
             }
             ImGui::TextWrapped("%s", singleLegNote.c_str());
+            if (ImGui::CollapsingHeader("Rejected pose")) {
+                ImGui::Checkbox("Place rejected pose (diagnostic only)", &placeRejectedPose);
+                ImGui::TextUnformatted("A rejected pose is not a standing test. The note says diagnostic only.");
+            }
             if (ImGui::Button("Test Weight Transfer")) {
                 arm();
                 stepping.requestTransfer(supportRight);
@@ -1952,7 +1960,7 @@ int Application::run() {
     glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_SAMPLES, 4);
-    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.3 | Physical Reactions Laboratory", nullptr, nullptr);
+    GLFWwindow* window = glfwCreateWindow(1600, 900, "MORTRAUMA v0.4.4 | Physical Reactions Laboratory", nullptr, nullptr);
     if (window == nullptr) {
         Log::error("Could not create an OpenGL 3.3 window.");
         glfwTerminate();

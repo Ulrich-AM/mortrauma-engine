@@ -229,6 +229,7 @@ Vec3 bodyUp(const RagdollBody& body, Quat rotation) {
 
 struct Moments {
     float ankle = 0.f;
+    float ankleMagnitude = 0.f;
     float knee = 0.f;
     float hip = 0.f;
     float hipRoot = 0.f;
@@ -315,6 +316,9 @@ Moments jointMoments(const Ragdoll& ragdoll, const Chain& chain, int stanceFoot,
             }
             if (joint.id.rfind("ankle_", 0) == 0) {
                 moments.ankle = std::max(moments.ankle, peak);
+                if (joint.child == stanceFoot) {
+                    moments.ankleMagnitude = length(moment[parent]);
+                }
             } else if (joint.id.rfind("knee_", 0) == 0) {
                 moments.knee = std::max(moments.knee, peak);
             } else if (joint.id == "hip_1" || joint.id == "hip_2") {
@@ -361,7 +365,16 @@ void clampChain(const Ragdoll& ragdoll, Chain& chain) {
     }
 }
 
-void consider(const Ragdoll& ragdoll, Chain chain, bool supportRight, Scored& best, Scored& lightest) {
+float postureCost(const SingleLegCandidate& pose, float handOffset) {
+    // Radians and degrees are mixed on purpose: each term is a fraction of a
+    // "noticeably away from the standing reference" budget, not a torque.
+    return pose.torsoTilt + std::max(0.f, std::fabs(pose.spineSwing1Deg) - 6.f) / 12.f +
+           std::max(0.f, pose.swingKneeDeg - 75.f) / 40.f + std::max(0.f, pose.swingHipSwing2Deg - 50.f) / 40.f +
+           std::max(0.f, std::fabs(pose.swingHipSwing1Deg) - 20.f) / 30.f + handOffset * 4.f;
+}
+
+void consider(const Ragdoll& ragdoll, const Chain& neutral, Chain chain, bool supportRight, Scored& calm, Scored& nearest, Scored& best,
+              Scored& probe) {
     clampChain(ragdoll, chain);
     rebuild(ragdoll, chain);
     const std::string stanceAnkle = supportRight ? "ankle_1" : "ankle_2";
@@ -424,6 +437,8 @@ void consider(const Ragdoll& ragdoll, Chain chain, bool supportRight, Scored& be
     result.torsoTilt = torso;
     result.pelvisTilt = pelvisTilt;
     result.ankleTorque = moments.ankle;
+    result.ankleMomentMagnitude = moments.ankleMagnitude;
+    result.gravityMoment = mass * 9.81f * arm;
     result.kneeTorque = moments.knee;
     result.hipTorque = moments.hip;
     result.hipRootTorque = moments.hipRoot;
@@ -446,6 +461,21 @@ void consider(const Ragdoll& ragdoll, Chain chain, bool supportRight, Scored& be
     result.swingHipSwing2Deg = degrees(swingHipEuler.z);
     result.swingKneeDeg = degrees(eulerOf(supportRight ? "knee_2" : "knee_1").z);
     result.spineSwing1Deg = degrees(eulerOf("spine_stomach").y);
+    float handOffset = 0.f;
+    int hands = 0;
+    for (const char* handId : {"hand_1", "hand_2"}) {
+        const int hand = indexOf(ragdoll, handId);
+        if (hand < 0 || hand >= int(neutral.position.size())) {
+            continue;
+        }
+        handOffset += length(chain.position[hand] - neutral.position[hand]);
+        ++hands;
+    }
+    if (hands > 0) {
+        handOffset /= float(hands);
+    }
+    result.handOffsetM = handOffset;
+    result.postureCost = postureCost(result, handOffset);
     result.feasible = inside && clear && flat && ankleOk && torquesOk && upright && arm < 0.02f;
     if (!inside) {
         result.rejection = "COM projection is outside the stance sole";
@@ -462,22 +492,40 @@ void consider(const Ragdoll& ragdoll, Chain chain, bool supportRight, Scored& be
     } else if (!(arm < 0.02f)) {
         result.rejection = "COM is more than 2 cm from the stance ankle";
     }
-    // A foot under the COM with the hip still out to the side is a bent leg.
-    // The straight-leg pose is the one whose hip and ankle are also close.
-    const float score = arm + hipArm + (inside ? 0.f : 0.25f) + (clear ? 0.f : 0.15f) + (flat ? 0.f : 0.2f) +
-                        std::max(0.f, moments.worstRatio - 1.f) * 0.15f + std::max(0.f, torso - 0.45f);
-    if (score < best.score) {
-        best.score = score;
+    // Feasible poses are ranked only by how close they sit to a relaxed
+    // standing shape. Torque is a gate, not something a folded leg can buy
+    // its way past. Infeasible poses are remembered for the rejection text
+    // and are not a placement candidate unless the caller asks.
+    if (result.feasible && result.postureCost < calm.score) {
+        calm.score = result.postureCost;
+        calm.chain = chain;
+        calm.result = result;
+    }
+    const float mechanical = moments.worstRatio + result.postureCost * 0.15f + (arm > 0.02f ? arm : 0.f) + (upright ? 0.f : torso);
+    if (!result.feasible && mechanical < nearest.score) {
+        nearest.score = mechanical;
+        nearest.chain = chain;
+        nearest.result = result;
+    }
+    // The geometric score only chooses where the local search looks. It is
+    // not the pose that gets written.
+    const float geometric = arm + hipArm + (inside ? 0.f : 0.25f) + (clear ? 0.f : 0.15f) + (flat ? 0.f : 0.2f) +
+                            std::max(0.f, moments.worstRatio - 1.f) * 0.15f + std::max(0.f, torso - 0.45f);
+    if (geometric < best.score) {
+        best.score = geometric;
         best.chain = chain;
         best.result = result;
     }
-    const bool stanceHolds = moments.ankle <= 12.f && moments.knee <= 35.f && moments.hip <= 50.f && moments.spine <= 55.f && arm < 0.016f &&
+    // The probe is the old hip-root minimum. It is searched so a folded leg
+    // that is actually inside the limits can still be found, then rejected
+    // by posture cost if a calmer feasible pose exists.
+    const bool probeRegion = moments.ankle <= 12.f && moments.knee <= 35.f && moments.hip <= 50.f && moments.spine <= 55.f && arm < 0.016f &&
                              clear && flat && torso < 0.55f;
-    const float light = (stanceHolds ? 0.f : 100.f) + moments.hipRoot + (stanceHolds ? 0.f : arm);
-    if (light < lightest.score) {
-        lightest.score = light;
-        lightest.chain = std::move(chain);
-        lightest.result = result;
+    const float probeScore = (probeRegion ? 0.f : 100.f) + moments.hipRoot + (probeRegion ? 0.f : arm);
+    if (probeScore < probe.score) {
+        probe.score = probeScore;
+        probe.chain = std::move(chain);
+        probe.result = result;
     }
 }
 
@@ -522,14 +570,16 @@ Chain baseChain(const Ragdoll& ragdoll, const BalanceConfig& config) {
 
 }  // namespace
 
-SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll, const BalanceConfig& config, bool supportRight) {
+SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll, const BalanceConfig& config, bool supportRight, bool placeRejected) {
     const std::string stanceHip = supportRight ? "hip_1" : "hip_2";
     const std::string swingHip = supportRight ? "hip_2" : "hip_1";
     const std::string stanceKnee = supportRight ? "knee_1" : "knee_2";
     const std::string swingKnee = supportRight ? "knee_2" : "knee_1";
+    Scored calm;
+    Scored nearest;
     Scored best;
-    Scored lightest;
-    lightest.score = 1e9f;
+    Scored probe;
+    probe.score = 1e9f;
     const Chain start = baseChain(ragdoll, config);
     const float hip1[] = {-42.f, -28.f, -14.f, 0.f, 14.f, 28.f, 42.f};
     const float hip2[] = {-12.f, 0.f, 12.f, 24.f, 36.f};
@@ -557,7 +607,7 @@ SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll
                                 chain.joint["spine_stomach"] = quatFromEulerXYZ(stomachPitch.x, radians(lateral), stomachPitch.z);
                                 chain.joint["spine_chest"] = quatFromEulerXYZ(chestPitch.x, radians(lateral * 0.7f), chestPitch.z);
                                 rebuild(ragdoll, chain);
-                                consider(ragdoll, chain, supportRight, best, lightest);
+                                consider(ragdoll, start, chain, supportRight, calm, nearest, best, probe);
                             }
                         }
                     }
@@ -565,7 +615,7 @@ SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll
             }
         }
     }
-    const SingleLegCandidate seed = best.result.searched ? best.result : lightest.result;
+    const SingleLegCandidate seed = best.result.searched ? best.result : nearest.result;
     for (float ds1 = -8.f; ds1 <= 8.1f; ds1 += 4.f) {
         for (float ds2 = -8.f; ds2 <= 8.1f; ds2 += 4.f) {
             for (float dk = -6.f; dk <= 6.1f; dk += 3.f) {
@@ -578,12 +628,12 @@ SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll
                     chain.joint["spine_stomach"] = quatFromEulerXYZ(stomachPitch.x, radians(seed.spineSwing1Deg + dSpine), stomachPitch.z);
                     chain.joint["spine_chest"] = quatFromEulerXYZ(chestPitch.x, radians((seed.spineSwing1Deg + dSpine) * 0.7f), chestPitch.z);
                     rebuild(ragdoll, chain);
-                    consider(ragdoll, chain, supportRight, best, lightest);
+                    consider(ragdoll, start, chain, supportRight, calm, nearest, best, probe);
                 }
             }
         }
     }
-    const SingleLegCandidate held = lightest.score < 100.f ? lightest.result : best.result;
+    const SingleLegCandidate held = probe.score < 100.f ? probe.result : best.result;
     for (float swing2Deg = 15.f; swing2Deg <= 110.1f; swing2Deg += 10.f) {
         for (float swingKneeDeg = 20.f; swingKneeDeg <= 140.1f; swingKneeDeg += 15.f) {
             for (float swing1Deg = -40.f; swing1Deg <= 40.1f; swing1Deg += 10.f) {
@@ -595,22 +645,32 @@ SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll
                 chain.joint["spine_stomach"] = quatFromEulerXYZ(stomachPitch.x, radians(held.spineSwing1Deg), stomachPitch.z);
                 chain.joint["spine_chest"] = quatFromEulerXYZ(chestPitch.x, radians(held.spineSwing1Deg * 0.7f), chestPitch.z);
                 rebuild(ragdoll, chain);
-                consider(ragdoll, chain, supportRight, best, lightest);
+                consider(ragdoll, start, chain, supportRight, calm, nearest, best, probe);
             }
         }
     }
-    const Scored& chosen = lightest.score < 80.f ? lightest : best;
+    const bool haveFeasible = calm.result.feasible;
+    const Scored& chosen = haveFeasible ? calm : nearest;
     SingleLegCandidate result = chosen.result;
-    result.lightest = "lightest com " + std::to_string(lightest.result.comToAnkleM) + " hip " + std::to_string(lightest.result.hipToAnkleM) +
-                      " torso " + std::to_string(lightest.result.torsoTilt) + " ankle " + std::to_string(lightest.result.ankleTorque) +
-                      " knee " + std::to_string(lightest.result.kneeTorque) + " hipT " + std::to_string(lightest.result.hipTorque) +
-                      " hipRoot " + std::to_string(lightest.result.hipRootTorque) +
-                      " root " + lightest.result.limitingJoint + " " + std::to_string(lightest.result.limitingTorque) + "/" +
-                      std::to_string(lightest.result.limitingLimit) + " angles " + std::to_string(lightest.result.stanceHipSwing1Deg) + " " +
-                      std::to_string(lightest.result.stanceHipSwing2Deg);
+    if (nearest.result.searched) {
+        result.lightest = "nearest rejected torso " + std::to_string(nearest.result.torsoTilt) + " swingKnee " +
+                          std::to_string(nearest.result.swingKneeDeg) + " hipRoot " + std::to_string(nearest.result.hipRootTorque) + " " +
+                          nearest.result.rejection;
+    }
     if (!result.searched) {
         result.rejection = "the pose search did not run";
         return result;
+    }
+    if (!haveFeasible && !placeRejected) {
+        if (result.rejection.empty()) {
+            result.rejection = "no feasible single-leg pose";
+        }
+        result.rejection += ". Not placed.";
+        return result;
+    }
+    result.diagnostic = !haveFeasible;
+    if (result.diagnostic) {
+        result.rejection = "diagnostic only, not a standing pose. " + result.rejection;
     }
     Chain placed = chosen.chain;
     const int stanceFoot = indexOf(ragdoll, supportRight ? "foot_1" : "foot_2");
@@ -635,12 +695,31 @@ SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll
     }
     result.maxSeparation = placement.maxSeparation;
     result.reference = std::move(placement.reference);
-    if (result.feasible) {
+    result.placed = true;
+    float referenceError = 0.f;
+    for (const auto& joint : ragdoll.joints) {
+        const auto intended = placed.joint.find(joint.id);
+        if (intended == placed.joint.end()) {
+            continue;
+        }
+        const Quat measured = world.jointState(joint.physics).constraintRotation;
+        if (!finite(measured)) {
+            continue;
+        }
+        referenceError = std::max(referenceError, quatAngle(mul(conjugate(intended->second), measured)));
+    }
+    result.referenceError = referenceError;
+    if (result.feasible && !result.diagnostic) {
         result.rejection = "static single-leg pose is inside the sole and the torque limits";
     }
     if (placement.maxSeparation > 0.02f) {
         result.feasible = false;
+        result.placed = true;
         result.rejection = "posed chain separation exceeds 2 cm";
+    }
+    if (referenceError > 0.25f) {
+        result.feasible = false;
+        result.rejection = "measured joint angle does not match the written pose";
     }
     return result;
 }

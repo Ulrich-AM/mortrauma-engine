@@ -96,6 +96,10 @@ The foot box sole is the visible underside, not the face perpendicular to the fo
 
 The v0.4.0 rightward miss was not a weaker right hip. Both hip constraints use one facing axis for swing1, so the same Euler sign abducts one thigh and adducts the other. The standing law still applies that shared sign. A weight shift adds the opposite sign on hip 2, with the same magnitude, plus an integral of the lateral error. The target is a few centimetres toward the selected foot, rate-limited, not the foot center. On that target the center of mass moved 53 mm toward the left foot and 47 mm toward the right foot. The right-foot attempt then restored two-foot standing. The swing foot's contact count did not fall, so the lift was refused. Torque limits, friction, and the sole geometry are unchanged. See `docs/WEIGHT_TRANSFER_ANALYSIS.md`.
 
+## v0.4.4 pose ranking
+
+The single-leg search still samples the same stance, swing, and spine grid. A pose is written only when it is inside the sole, within 2 cm of the ankle, flat, clear of the swing foot, under 0.45 rad of torso tilt, and inside every motor limit. Among those poses the lowest posture cost is kept. Posture cost penalizes torso lean, lateral spine bend, swing-knee flexion past 75°, swing-hip flexion past 50°, swing abduction past 20°, and hand displacement from the upright reference. It is not a torque and it cannot admit an infeasible pose. A rejected pose stays in the note, with the joint that failed. Placing it requires the "diagnostic only" checkbox. See `docs/M4_4_EXPERIMENTS.md`.
+
 ## v0.4.3 single-leg pose
 
 A laboratory reset can place one foot under the center of mass before simulation starts. The balance task then corrects only that leg. Hip 2 still uses the mirrored swing1 sign. The two-foot preset is unchanged. The right-leg pose is statically inside the torque limits and is not held by the motors. See `docs/STANCE_LEG_CONTROL.md`.

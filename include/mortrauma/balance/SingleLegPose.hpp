@@ -18,6 +18,10 @@ namespace mt {
 struct SingleLegCandidate {
     bool searched = false;
     bool feasible = false;
+    // True only when the bodies were actually written. An infeasible result
+    // is not written unless the caller asked for a diagnostic placement.
+    bool placed = false;
+    bool diagnostic = false;
     bool supportRight = true;
     float totalMass = 0.f;
     float comToAnkleM = 0.f;
@@ -26,7 +30,11 @@ struct SingleLegCandidate {
     float swingClearanceM = 0.f;
     float torsoTilt = 0.f;
     float pelvisTilt = 0.f;
+    // Peak axis component, and the length of the stance-ankle moment vector.
+    // gravityMoment is mass * g * the horizontal COM-to-ankle distance.
     float ankleTorque = 0.f;
+    float ankleMomentMagnitude = 0.f;
+    float gravityMoment = 0.f;
     float kneeTorque = 0.f;
     float hipTorque = 0.f;
     float hipRootTorque = 0.f;
@@ -45,16 +53,20 @@ struct SingleLegCandidate {
     float swingHipSwing2Deg = 0.f;
     float swingKneeDeg = 0.f;
     float spineSwing1Deg = 0.f;
+    float postureCost = 0.f;
+    float handOffsetM = 0.f;
+    float referenceError = 0.f;
     float maxSeparation = 0.f;
     std::vector<MotorTaskCommand> reference;
 };
 
-// Searches joint angles, writes the best pose, and returns the static result.
-// The write happens before simulation, the same way a standing reset does.
-// A feasible pose has the COM projection inside the stance sole, within the
-// ankle's 12 N·m arm, every joint moment inside its motor limit, a flat sole,
-// and the swing foot clear of the floor. An infeasible best pose is still
-// written so a simulation can show the failure.
-SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll, const BalanceConfig& config, bool supportRight);
+// Searches joint angles. A feasible pose is written, the same way a standing
+// reset is written. Feasible means the COM projection is inside the stance
+// sole, within 2 cm of the ankle, every joint moment is inside its motor
+// limit, the sole is flat, the swing foot is clear, and the torso tilt is
+// under 0.45 rad. Among those poses the lowest posture cost is kept.
+// An infeasible pose is not written unless placeRejected is set. That path
+// is diagnostic only and is labeled as such.
+SingleLegCandidate placeSingleLegCandidate(PhysicsWorld& world, Ragdoll& ragdoll, const BalanceConfig& config, bool supportRight, bool placeRejected = false);
 
 }  // namespace mt
